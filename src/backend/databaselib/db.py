@@ -274,7 +274,7 @@ def search_memory(
 #     return storage_path
 
 
-def ingest_raw_article(raw_payload: str, source: str) -> dict:
+def ingest_raw_article(raw_payload: str, source: str) -> JsonDict:
     storage_path = f"{source}/{str(uuid.uuid4())}.json"
 
     supabase.storage.from_("raw-payloads").upload(
@@ -296,7 +296,7 @@ def ingest_raw_article(raw_payload: str, source: str) -> dict:
     )
 
 
-def get_unprocessed() -> list[dict]:
+def get_unprocessed() -> list[JsonDict]:
     return (
         supabase.table("raw_ingestions")
         .select("*")
