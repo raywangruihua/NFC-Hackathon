@@ -1,5 +1,5 @@
 import json
-from db import supabase, insert_storage, insert_event, insert_memory, insert_theme, search_memory, get_full_article, Event, Theme
+from db import supabase, ingest_raw_article, insert_event, insert_memory, insert_theme, search_memory, get_full_article, Event, Theme, get_unprocessed, mark_processed
 from embeddings import embed_document, embed_query
 import uuid
 from datetime import datetime, timezone
@@ -23,18 +23,19 @@ supabase.table("themes").delete().neq(
 supabase.table("events").delete().neq(
     "event_id", "00000000-0000-0000-0000-000000000000"
 ).execute()
+supabase.table("raw_ingestions").delete().neq(
+    "event_id", "00000000-0000-0000-0000-000000000000"
+).execute()
 supabase.storage.empty_bucket("raw-payloads")
 
 print("✓ Cleaned up previous test data")
 
 # ── 1. Upload a raw article to storage ───────────────────────────────────────
 
-event_id = str(uuid.uuid4())  # reuse event from earlier tests
-
+source = "reuters"
 raw_payload = json.dumps(
     {
-        "event_id": event_id,
-        "source": "reuters",
+        "source": source,
         "published_at": "2026-03-04T10:00:00Z",
         "title": "US Inflation Surges to 4.2%",
         "full_text": "US inflation rose to 4.2% in March, exceeding expectations of 3.8%. The Federal Reserve is expected to respond with further rate hikes as price pressures remain elevated across energy and food categories.",
@@ -42,32 +43,36 @@ raw_payload = json.dumps(
     }
 )
 
-storage_path = f"{event_id}.json"
+ingest = ingest_raw_article(raw_payload, source)
 
-insert_storage(storage_path, raw_payload)
+print(f"✓ Uploaded raw article to storage, {ingest["storage_path"]}")
 
-print(f"✓ Uploaded raw article to storage: {storage_path}")
 
-# ── 2. Insert a test event ────────────────────────────────────────────────────
+unprocessed = get_unprocessed()
 
-event = insert_event(
-    Event(
-        event_id=event_id,
-        event_type="economic_release",
-        source="reuters",
-        published_at="2026-03-04",
-        region="US",
-        asset_classes=["bonds", "equities"],
-        content="US inflation rose to 4.2% in March, exceeding expectations of 3.8%.",
-        importance_score=0.9,
-        entities={"countries": ["US"]},
-        topic="inflation",
-        sentiment="risk-off",
-        raw_payload_ref=storage_path,
+for ingestion in unprocessed:
+    raw = supabase.storage.from_("raw-payloads").download(ingestion["storage_path"])
+    payload = json.loads(raw)
+
+    event_id = str(uuid.uuid4())
+    event = insert_event(
+        Event(
+            event_id=event_id,
+            raw_payload_ref=ingestion["storage_path"],
+            source=ingestion["source"],
+            event_type="economic_release",
+            published_at="2026-03-04",
+            region="US",
+            asset_classes=["bonds", "equities"],
+            content="US inflation rose to 4.2% in March, exceeding expectations of 3.8%.",
+            importance_score=0.9,
+            entities={"countries": ["US"]},
+            topic="inflation",
+            sentiment="risk-off",
+        )
     )
-)
 
-print(f"✓ Inserted event: {event['event_id']}")
+    mark_processed(ingestion["id"], event_id)
 
 # ── 3. Insert a test theme ────────────────────────────────────────────────────
 
