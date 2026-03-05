@@ -1,5 +1,5 @@
 """
-Data library
+Data collection library
 
 Data collected is based on whether it is valuable for asset management and risk assessment.
 Functions that start with 'get' return data in json formats.
@@ -8,68 +8,49 @@ Functions that start with 'list' return a list of available data.
 Collects data from the following APIs:
 - Federal Reserve Economic Data (FRED)
   - US macro and regional economic time series
-  - Annual, quarterly, monthly, weekly and daily
-- World Bank Indicators API
-- OECD Data API
-- IMF Data API
-- Eurostat API
-- ECB Data Portal API
-- BLS Public Data API
-- BEA API
-- U.S. Census API
-- U.S. Treasury Fiscal Data API
-- EIA Open Data API
+  - Annual, quarterly, monthly, weekly and daily updates
+- World Bank Indicators API (WIP)
+- OECD Data API (WIP)
+- IMF Data API (WIP)
+- Eurostat API (WIP)
+- ECB Data Portal API (WIP)
+- BLS Public Data API (WIP)
+- BEA API (WIP)
+- U.S. Census API (WIP)
+- U.S. Treasury Fiscal Data API (WIP)
+- EIA Open Data API (WIP)
 
 Available and relevant macroeconomic factors (FRED):
 - Growth/Activity
-  - Real GDP
-  - Payrolls
-  - Industrial Production
-  - Retail Sales
-  - PMI
+  - Real GDP, payrolls, industrial production, retail sales, PMI
 - Inflation
-  - CPI
-  - Core CPI
-  - PCE
-  - Core PCE
-  - PPI
-  - Breakevens
+  - CPI, core CPI, PCE, core PCE, PPI, breakevens
 - Labour Market
-  - Unemployment
-  - Participation
-  - Claims
-  - Wage Growth
+  - Unemployment, participation, claims, wage growth
 - Rates/Monetary Policy
-  - Fed Funds
-  - SOFR
-  - Policy Band
+  - Fed funds, SOFR, policy band
 - Yield Curve/Duration
-  - Treasury Tenor Yields
-  - Curve Spreads
+  - Treasury tenor yields, curve spreads
 - Credit/Risk Premia
-  - IG/HY Spreads
-  - TED Spread
-  - Financial Stress/Conditions
+  - IG/HY spreads, TED spread, financial stress/conditions
 - Money/Liquidity/Credit
-  - M2
-  - Fed Balance Sheet
-  - Bank Credit
-  - C&I Loans
+  - M2, Fed balance sheet, bank credit, C&I loans
 - Housing
-  - Starts
-  - Permits
-  - House Prices
-  - Mortgage Rates
+  - Starts, permits, house prices, mortgage rates
 - Consumer/Sentiment
-  - Sentiment
-  - Consumption
-  - Saving Rate
+  - Sentiment, consumption, saving rate
 - FX/External/Commodities
-  - Broad Dollar
-  - Major FX
-  - Oil
-  - Gold
+  - Broad dollar, major FX, oil, gold
+
+Issues:
+- FRED
+  - 'ism_manufacturing_pmi' and 'gold' series data not available
+
+Scrapes news articles from the following websites (using scrapy):
+- Bloomberg
 """
+
+#################### Economic Indicator Data API ####################
 
 import os
 from typing import Dict, List, Optional
@@ -84,7 +65,7 @@ REQUEST_TIMEOUT = 20
 load_dotenv()
 FRED_API_KEY = os.getenv("FRED_API_KEY")
 
-######################### FRED Data API #########################
+########################### FRED ###########################
 
 # All relevant FRED series data, maps keyterms to series_id
 FRED_INDICATOR_MAP: Dict[str, Dict[str, str]] = {
@@ -331,4 +312,4 @@ def test_fred() -> None:
 
 
 if __name__ == "__main__":
-    test_fred()
+    print("Hello World!")
