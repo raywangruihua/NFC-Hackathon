@@ -9,9 +9,7 @@ Usage:
 
 import json
 import uuid
-import argparse
 from datetime import datetime
-from typing import Dict, List, Optional
 
 from fred_series_map import FRED_SERIES_MAP, get_series_meta
 
@@ -129,35 +127,3 @@ def convert_fred_response(raw: dict, series_id: str) -> list:
         events.append(event)
 
     return events
-
-
-# ---------------------------------------------------------------------------
-# CLI entry point
-# ---------------------------------------------------------------------------
-def main():
-    parser = argparse.ArgumentParser(
-        description="Convert FRED API JSON response to unified event JSON"
-    )
-    parser.add_argument("--input",  required=True)
-    parser.add_argument("--series", required=True)
-    parser.add_argument("--output", default=None)
-    args = parser.parse_args()
-
-    with open(args.input) as f:
-        raw = json.load(f)
-
-    events      = convert_fred_response(raw, args.series.upper())
-    output_path = args.output or f"{args.series.upper()}_events.json"
-
-    with open(output_path, "w") as f:
-        json.dump(events, f, indent=2)
-
-    print(f"Converted {len(events)} observations to {output_path}")
-
-    if events:
-        print("\nSample event:")
-        print(json.dumps(events[0], indent=2))
-
-
-if __name__ == "__main__":
-    main()
