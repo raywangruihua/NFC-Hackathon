@@ -315,6 +315,7 @@ def test_fred() -> None:
 ############################# webcrawler #############################
 
 from scrapy.crawler import CrawlerProcess
+from scrapy.settings import SETTINGS_PRIORITIES
 from scrapy.utils.project import get_project_settings
 from ..webcrawlerlib.spiders.gdelt_spider import GdeltSpider
 
@@ -324,7 +325,7 @@ def run_gdelt_spider(
         query_terms: str | List[str], 
         timespan: str, 
         maxrecords: int,
-        debug: Optional[bool] = False
+        output: Optional[bool] = False
 ) -> None:
     """
     Run the GDELT spider to crawl and scrape news articles.
@@ -334,26 +335,26 @@ def run_gdelt_spider(
         query_terms: List of query terms to search articles.
         timespan: Example formats = 1day, 7days, 24h, 1week, 3months
         maxrecords: The maximum number of articles to scrape.
-        debug: Output scraped data to gdelt_debug.json in current directory.
+        output: Output scraped data to gdelt_spider_output.json in current directory.
     """
     if isinstance(query_terms, List):
         query = f"({" OR ".join(query_terms)})"
     else:
         query = query_terms
 
-    print(query)
-
     settings = get_project_settings()
+    settings.set("LOG_LEVEL", "WARNING", priority=SETTINGS_PRIORITIES["cmdline"])
+    settings.set("LOGSTATS_INTERVAL", 0, priority=SETTINGS_PRIORITIES["cmdline"])
     settings.set("GDELT_QUERY", query)
     settings.set("GDELT_TIMESPAN", timespan)
     settings.set("GDELT_MAXRECORDS", maxrecords)
 
     # debug
-    if debug:
+    if output:
         settings.set(
             "FEEDS",
             {
-                "gdelt_debug.json": {
+                "gdelt_spider_output.json": {
                     "format": "json",
                     "encoding": "utf-8",
                     "indent": 2,
@@ -368,4 +369,4 @@ def run_gdelt_spider(
 
 
 if __name__ == "__main__":
-    run_gdelt_spider(["ukraine war"], "7days", 10)
+    print("Hello World!")

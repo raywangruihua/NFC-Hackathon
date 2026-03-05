@@ -9,8 +9,8 @@
 
 BOT_NAME = "webcrawlerlib"
 
-SPIDER_MODULES = ["webcrawlerlib.spiders"]
-NEWSPIDER_MODULE = "webcrawlerlib.spiders"
+SPIDER_MODULES = ["backend.webcrawlerlib.spiders"]
+NEWSPIDER_MODULE = "backend.webcrawlerlib.spiders"
 
 ADDONS = {}
 
@@ -56,7 +56,7 @@ DEFAULT_REQUEST_HEADERS = {
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 DOWNLOADER_MIDDLEWARES = {
-    "webcrawlerlib.middlewares.QualityDownloaderMiddleware": 543,
+    "backend.webcrawlerlib.middlewares.QualityDownloaderMiddleware": 543,
 }
 
 # Domain policy: keep empty list to disable allowlist filtering
@@ -85,7 +85,7 @@ BLOCK_PAGE_MARKERS = [
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
 ITEM_PIPELINES = {
-    "webcrawlerlib.pipelines.RawPayloadStoragePipeline": 300,
+    "backend.webcrawlerlib.pipelines.RawPayloadStoragePipeline": 300,
 }
 
 # Enable and configure the AutoThrottle extension (disabled by default)
