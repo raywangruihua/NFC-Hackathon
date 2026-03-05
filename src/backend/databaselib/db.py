@@ -1,4 +1,6 @@
 import os
+import uuid
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -263,13 +265,56 @@ def search_memory(
 
 # ── Storage ──────────────────────────────────────────────────────────────
 
-def insert_storage(storage_path: str, raw_payload: str) -> str:
+# def insert_storage(storage_path: str, raw_payload: str) -> str:
+#     supabase.storage.from_("raw-payloads").upload(
+#         path=storage_path,
+#         file=raw_payload.encode("utf-8"),
+#         file_options={"content-type": "application/json"},
+#     )
+#     return storage_path
+
+
+def ingest_raw_article(raw_payload: str, source: str) -> dict:
+    storage_path = f"{source}/{str(uuid.uuid4())}.json"
+
     supabase.storage.from_("raw-payloads").upload(
         path=storage_path,
         file=raw_payload.encode("utf-8"),
         file_options={"content-type": "application/json"},
     )
-    return storage_path
+
+    return (
+        supabase.table("raw_ingestions")
+        .insert(
+            {
+                "storage_path": storage_path,
+                "source": source,
+            }
+        )
+        .execute()
+        .data[0]
+    )
+
+
+def get_unprocessed() -> list[dict]:
+    return (
+        supabase.table("raw_ingestions")
+        .select("*")
+        .eq("processed", False)
+        .order("ingested_at")
+        .execute()
+        .data
+    )
+
+
+def mark_processed(ingestion_id: str, event_id: str) -> None:
+    supabase.table("raw_ingestions").update(
+        {
+            "processed": True,
+            "processed_at": datetime.now(timezone.utc).isoformat(),
+            "event_id": event_id,
+        }
+    ).eq("id", ingestion_id).execute()
 
 
 def get_full_article(event_id: str) -> JsonDict | None:
