@@ -265,46 +265,61 @@ def search_memory(
 
 # ── Storage ──────────────────────────────────────────────────────────────
 
-# def insert_storage(storage_path: str, raw_payload: str) -> str:
-#     supabase.storage.from_("raw-payloads").upload(
-#         path=storage_path,
-#         file=raw_payload.encode("utf-8"),
-#         file_options={"content-type": "application/json"},
-#     )
-#     return storage_path
+@DeprecationWarning
+def insert_storage(storage_path: str, raw_payload: str) -> str:
+    """
+    Deprecated.
+    """
+    supabase.storage.from_("raw-payloads").upload(
+        path=storage_path,
+        file=raw_payload.encode("utf-8"),
+        file_options={"content-type": "application/json"},
+    )
+    return storage_path
 
 
-def ingest_raw_article(raw_payload: str, source: str) -> dict:
+def ingest_raw_article(raw_payload: str, source: str) -> None:
+    """
+    Stores raw articles in database marked as unprocess by default.
+
+    Args:
+        raw_payload: Raw HTML of news articles
+        source: news website source domain
+    """
     storage_path = f"{source}/{str(uuid.uuid4())}.json"
 
+    # upload data to raw payloads
     supabase.storage.from_("raw-payloads").upload(
         path=storage_path,
         file=raw_payload.encode("utf-8"),
         file_options={"content-type": "application/json"},
     )
 
-    return (
-        supabase.table("raw_ingestions")
-        .insert(
-            {
-                "storage_path": storage_path,
-                "source": source,
-            }
-        )
-        .execute()
-        .data[0]
-    )
+    # upload entry data to raw ingestions
+    supabase.table("raw_ingestions").insert(
+        {
+            "storage_path": storage_path,
+            "source": source,
+        }
+    ).execute().data[0]
 
 
-def get_unprocessed() -> list[dict]:
-    return (
+def get_unprocessed() -> list[JsonDict]:
+    """
+    Returns all unprocessed raw articles as list of JSON.
+    """
+    result = (
         supabase.table("raw_ingestions")
         .select("*")
         .eq("processed", False)
         .order("ingested_at")
         .execute()
-        .data
     )
+    data = result.data
+    if not isinstance(data, list):
+        return []
+
+    return [cast(JsonDict, row) for row in data if isinstance(row, dict)]
 
 
 def mark_processed(ingestion_id: str, event_id: str) -> None:

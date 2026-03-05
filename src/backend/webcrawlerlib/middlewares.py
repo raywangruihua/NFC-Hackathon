@@ -100,7 +100,7 @@ class QualityDownloaderMiddleware:
         )
         if retry_req:
             retry_times = retry_req.meta.get("retry_times", 0)
-            spider.logger.info(
+            spider.logger.warning(
                 "Retrying %s (reason=%s, retry_times=%s)",
                 request.url,
                 reason,

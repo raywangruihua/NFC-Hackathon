@@ -14,6 +14,10 @@ NEWSPIDER_MODULE = "webcrawlerlib.spiders"
 
 ADDONS = {}
 
+# Logging: show only high-signal crawl diagnostics by default.
+LOG_LEVEL = "WARNING"
+LOG_SHORT_NAMES = True
+
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
 USER_AGENT = "webcrawlerlib/1.0 (+contact: rwang043@e.ntu.edu.sg)"

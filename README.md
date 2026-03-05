@@ -58,7 +58,7 @@ def run_gdelt_spider(
 ) -> None:
 ```
 
-News article output format
+News article output format.
 
 ```json
 {
