@@ -77,6 +77,12 @@ class GdeltSpider(scrapy.Spider):
             if not article_url:
                 continue
 
+            # Safety net: skip non-English articles even if GDELT leaks them
+            lang = (article.get("language") or "").lower()
+            if lang and lang != "english":
+                self.logger.info("Skipping non-English article lang=%s url=%s", lang, article_url)
+                continue
+
             meta = {
                 "gdelt": {
                     "title": article.get("title"),

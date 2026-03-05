@@ -325,7 +325,8 @@ def run_gdelt_spider(
         query_terms: str | List[str], 
         timespan: str, 
         maxrecords: int,
-        output: Optional[bool] = False
+        output: Optional[bool] = False,
+        language: str = "english",
 ) -> None:
     """
     Run the GDELT spider to crawl and scrape news articles.
@@ -336,11 +337,21 @@ def run_gdelt_spider(
         timespan: Example formats = 1day, 7days, 24h, 1week, 3months
         maxrecords: The maximum number of articles to scrape.
         output: Output scraped data to gdelt_spider_output.json in current directory.
+        language: Source language filter for GDELT (default: "english").
     """
     if isinstance(query_terms, List):
-        query = f"({" OR ".join(query_terms)})"
+        quoted = []
+        for term in query_terms:
+            if " " in term:
+                quoted.append(f'"{term}"')
+            else:
+                quoted.append(term)
+        query = f"({' OR '.join(quoted)})"
     else:
         query = query_terms
+
+    # Restrict GDELT results to the specified language
+    query = f"{query} sourcelang:{language}"
 
     settings = get_project_settings()
     settings.set("LOG_LEVEL", "WARNING", priority=SETTINGS_PRIORITIES["cmdline"])
