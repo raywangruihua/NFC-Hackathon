@@ -10,7 +10,8 @@ class GdeltSpider(scrapy.Spider):
 
     def start_requests(self):
         """
-        Returns HTTP requests from GDELT endpoint. Configure query, timespan and maxrecords via settings.py
+        Start crawling by sending a request to GDELT endpoint, which returns a list of articles related to the query.
+        Default values for query, timespan and maxrecords are used if not founding in crawler settings.
         """
         query = self.settings.get(
             "GDELT_QUERY",
@@ -29,9 +30,12 @@ class GdeltSpider(scrapy.Spider):
             "&sort=datedesc"
         )
 
-        yield scrapy.Request(url, callback=self.parse_gdelt_feed)
+        yield scrapy.Request(url, callback=self.parse_gdelt_feed) # get gdelt response
 
     def parse_gdelt_feed(self, response):
+        """
+        Parse GDELT response, iterate and crawl through articles.
+        """
         if response.status != 200:
             self.logger.warning("GDELT API non-200 response: status=%s url=%s", response.status, response.url)
             return
@@ -85,6 +89,9 @@ class GdeltSpider(scrapy.Spider):
             )
 
     def parse_article(self, response):
+        """
+        Scrape article.
+        """
         gdelt_meta = response.meta.get("gdelt", {})
 
         published_at = (
@@ -98,11 +105,6 @@ class GdeltSpider(scrapy.Spider):
             or response.css("[class*='author']::text").get()
         )
 
-        paragraphs = response.css("article p::text, main p::text, p::text").getall()
-        body = " ".join(p.strip() for p in paragraphs if p.strip())
-
-        path_parts = [p for p in urlparse(response.url).path.split("/") if p]
-
         yield NewsItem(
             title=gdelt_meta.get("title"),
             language=gdelt_meta.get("language"),
@@ -111,8 +113,7 @@ class GdeltSpider(scrapy.Spider):
             url=response.url,
             published_at=published_at if published_at else None,
             author=author.strip() if author else None,
-            section=path_parts[0] if path_parts else None,
-            body=body,
+            raw=response.text,
             tone=gdelt_meta.get("tone"),
             fetch_error=None,
         )
@@ -129,8 +130,7 @@ class GdeltSpider(scrapy.Spider):
             url=request.url,
             published_at=None,
             author=None,
-            section=None,
-            body=None,
+            raw=None,
             tone=gdelt_meta.get("tone"),
             fetch_error=str(failure.value),
         )

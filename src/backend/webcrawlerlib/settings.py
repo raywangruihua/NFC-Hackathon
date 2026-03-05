@@ -9,8 +9,8 @@
 
 BOT_NAME = "webcrawlerlib"
 
-SPIDER_MODULES = ["src.spiders"]
-NEWSPIDER_MODULE = "src.spiders"
+SPIDER_MODULES = ["webcrawlerlib.spiders"]
+NEWSPIDER_MODULE = "webcrawlerlib.spiders"
 
 ADDONS = {}
 
@@ -52,7 +52,7 @@ DEFAULT_REQUEST_HEADERS = {
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 DOWNLOADER_MIDDLEWARES = {
-    "src.middlewares.QualityDownloaderMiddleware": 543,
+    "webcrawlerlib.middlewares.QualityDownloaderMiddleware": 543,
 }
 
 # Domain policy: keep empty list to disable allowlist filtering

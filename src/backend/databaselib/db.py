@@ -70,7 +70,7 @@ class Theme:
     title: str
     description: str
     status: str
-    heat_score: str
+    heat_score: float
     asset_classes: list[str]
     region: str
 
@@ -242,7 +242,7 @@ def search_memory(
 
 # ── Storage ──────────────────────────────────────────────────────────────
 
-def insert_storage(storage_path: str, raw_payload: str) -> str:
+def insert_storage(storage_path: str, raw_payload: str) -> None:
     supabase.storage.from_("raw-payloads").upload(
         path=storage_path,
         file=raw_payload.encode("utf-8"),
