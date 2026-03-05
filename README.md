@@ -265,6 +265,7 @@ raw_payload = json.dumps(
 )
 
 event_id = str(uuid.uuid4())
+storage_path = f"{event_id}.json"
 
 # upload to storage first
 insert_storage(storage_path, raw_payload)
