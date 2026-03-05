@@ -4,7 +4,9 @@ This initial prototype follows a monolithic structure.
 
 ## Source ingestion
 
-Data is taken from publicly available APIs and scraped from reputable financial news websites. Future work can be done to include premium APIs such as BLPAPI (Bloomberg API). For demonstration purposes, only free sources are used.
+Data is taken from publicly available APIs and scraped from reputable
+financial news websites. Future work can include premium APIs such as BLPAPI
+(Bloomberg API). For demonstration purposes, only free sources are used.
 
 ### APIs
 
@@ -13,14 +15,14 @@ Federal Reserve Economic Data (FRED)
 - US macro and regional economic time series
 - Annual, quarterly, monthly, weekly and daily
 
-``` python
+```python
 # Return all available macroeconomic indicator categories.
 def list_fred_categories() -> List[str]:
 
 # Return all macroeconomic indicators for category.
 def list_fred_indicators(category: str) -> Dict[str, str]:
 
-# Fetch data for a macroeconomic indicator from Federal Reserve Economic Data.
+# Fetch data for a macroeconomic indicator from FRED.
 def get_fred_indicator_data(
     indicator_name: str,
     category: Optional[str] = None,
@@ -30,7 +32,7 @@ def get_fred_indicator_data(
     limit: Optional[int] = None,
 ) -> Dict:
 
-# Fetch data for all macroeconomic indicators in a category from Federal Reserve Economic Data.
+# Fetch data for all macroeconomic indicators in a category from FRED.
 def get_fred_category_data(
     category: str,
     start_date: Optional[str] = None,
@@ -40,17 +42,19 @@ def get_fred_category_data(
 ) -> Dict[str, Dict]:
 ```
 
-GDELT based webcrawler
+GDELT-based webcrawler
 
-Major news sites block webcrawlers unless users pay a subscription fee or license. GDELT endpoint offers keyword based search to look for news articles, which our webscrawler scrapes.
+Major news sites block webcrawlers unless users pay a subscription fee or
+license. The GDELT endpoint offers keyword-based search to find news articles,
+which our webcrawler then scrapes.
 
 ```python
 # Run the GDELT spider to crawl and scrape news articles.
-# TODO: Implement pipeline.py to save scraped data into raw database.
 def run_gdelt_spider(
-        query_terms: str | List[str], 
-        timespan: str, 
-        maxrecords: int
+    query_terms: str | List[str],
+    timespan: str,
+    maxrecords: int,
+    debug: Optional[bool] = False,
 ) -> None:
 ```
 
@@ -63,11 +67,10 @@ News article output format
     "sourcecountry": "USA",
     "source": "USA News",
     "url": "www.news.com",
-    "published_at": "2025-01-01", 
-    "author": "John USA", 
-    "section": "Breaking news: bla bla bla",
-    "body": "Suspect is on the run", 
-    "tone": "Positive", // Initial tone/semantic analysis provided by GDELT API
+    "published_at": "2025-01-01",
+    "author": "John USA",
+    "raw": "...",
+    "tone": "Positive",
     "fetch_error": null
 }
 ```
@@ -80,10 +83,11 @@ News article output format
 
 ### Overview
 
-The storage layer is split into three components, each serving a distinct purpose:
+The storage layer is split into three components, each serving a distinct
+purpose:
 
 | Store | Technology | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | Raw store | Supabase Storage | Immutable original payloads |
 | Processed store | Supabase Postgres | Cleaned, query-ready structured data |
 | Memory store | Supabase pgvector | Semantic retrieval over unstructured text |
@@ -93,10 +97,11 @@ The storage layer is split into three components, each serving a distinct purpos
 ## Processed Store Tables
 
 ### `events`
+
 Normalized event records. The central table everything else references.
 
 | Field | Type | Description |
-|---|---|---|
+| --- | --- | --- |
 | event_id | uuid | Primary key, generated before DB insert |
 | event_type | text | e.g. economic_release, news |
 | source | text | Publisher name |
@@ -104,18 +109,19 @@ Normalized event records. The central table everything else references.
 | region | text | e.g. US, EU |
 | asset_classes | text[] | e.g. [bonds, equities] |
 | content | text | Cleaned article text |
-| importance_score | float | 0–1 |
-| entities | dict | e.g. {"countries: ["US", "China"], "tickers": ["SPY", "TLT"]} |
+| importance_score | float | 0-1 |
+| entities | dict | e.g. {"countries": ["US", "China"], "tickers": ["SPY", "TLT"]} |
 | topic | text | e.g. inflation, rates, geopolitics |
 | sentiment | text | risk-on, risk-off, neutral |
 | raw_payload_ref | text | Path to raw file in Supabase Storage |
 | created_at | timestamptz | row creation time |
 
 ### `themes`
+
 Grouped clusters of related events identified by the analysis agent.
 
 | Field | Type | Description |
-|---|---|---|
+| --- | --- | --- |
 | theme_id | uuid | Primary key |
 | title | text | Human-readable theme name |
 | description | text | Description of theme |
@@ -128,32 +134,41 @@ Grouped clusters of related events identified by the analysis agent.
 | created_at | timestamptz | row creation time |
 
 ### `event_theme_map`
-Many-to-many link between events and themes. One event can belong to multiple themes.
+
+Many-to-many link between events and themes. One event can belong to multiple
+themes.
 
 ### `portfolio_exposure`
+
 Per-user portfolio holdings. Used to match themes to user risk.
 
 ### `risk_alerts`
+
 Generated alerts when a theme breaches a severity threshold for a user.
 
 ### `recommendations`
-Suggested actions with confidence score and a reference to the AI's reasoning in the memory store.
+
+Suggested actions with confidence score and a reference to the AI's reasoning
+in the memory store.
 
 ---
 
 ## Raw Store
 
-Original payloads are stored in Supabase Storage under the `raw-payloads` bucket.
+Original payloads are stored in Supabase Storage under the `raw-payloads`
+bucket.
 
 Storage path format: `{event_id}.json`
 
-The `raw_payload_ref` field on each event row points to this path. To retrieve the full article:
+The `raw_payload_ref` field on each event row points to this path. To retrieve
+the full article:
 
-```
-memory.metadata.event_id → events.raw_payload_ref → Supabase Storage
+```text
+memory.metadata.event_id -> events.raw_payload_ref -> Supabase Storage
 ```
 
-The UUID is generated in Python **before** the DB insert so the storage path and event row can reference the same ID:
+The UUID is generated in Python **before** the DB insert so the storage path
+and event row can reference the same ID:
 
 ```python
 import uuid
@@ -172,28 +187,29 @@ insert_event({"event_id": event_id, "raw_payload_ref": storage_path, ...})
 
 ## Memory Store
 
-The memory store enables semantic retrieval — finding relevant past context by meaning, not keywords.
+The memory store enables semantic retrieval - finding relevant past context by
+meaning, not keywords.
 
 ### What gets stored
 
 | content_type | When | Example |
-|---|---|---|
+| --- | --- | --- |
 | article_chunk | After enrichment | Chunked article text (~500 words) |
 | summary | After analysis | AI-generated theme or event summary |
-| recommendation_rationale | After recommendation generated | AI reasoning behind a suggested action |
-| timeline_note | During theme lifecycle | Notes on how a theme evolved |
+| recommendation_rationale | After recommendation generated | AI reasoning |
+| timeline_note | During theme lifecycle | Notes on theme evolution |
 
 ### How retrieval works
 
-```
+```text
 User query
-    ↓
-embed_query(query)          ← uses RETRIEVAL_QUERY task type
-    ↓
-match_memory(embedding)     ← nearest-neighbor search in pgvector
-    ↓
+    ->
+embed_query(query)          <- uses RETRIEVAL_QUERY task type
+    ->
+match_memory(embedding)     <- nearest-neighbor search in pgvector
+    ->
 top-k results ranked by cosine similarity
-    ↓
+    ->
 filter by metadata (date, region, content_type)
 ```
 
@@ -201,8 +217,8 @@ filter by metadata (date, region, content_type)
 
 Always use the correct task type when embedding:
 
-- `RETRIEVAL_DOCUMENT` — when inserting into memory
-- `RETRIEVAL_QUERY` — when searching memory
+- `RETRIEVAL_DOCUMENT` - when inserting into memory
+- `RETRIEVAL_QUERY` - when searching memory
 
 Using mismatched types degrades retrieval quality.
 
@@ -211,47 +227,54 @@ Using mismatched types degrades retrieval quality.
 All database interactions go through `db.py`.
 
 ### Events
+
 ```python
 # Insert a new event (status defaults to pending)
-insert_event(event: Event) -> dict
+insert_event(event: Event) -> JsonDict
 
 # Get events with optional filters
 get_events(
     topic: str | None,
     region: str | None,
     min_importance: float | None,
-    days: int | None
-) -> list[dict]
+    days: int | None,
+) -> list[JsonDict]
 ```
 
 ### Themes
+
 ```python
 # Insert a new theme
-insert_theme(theme: Theme) -> dict
+insert_theme(theme: Theme) -> JsonDict
 
 # Get all active themes
-get_active_themes(min_heat: float | None) -> list[dict]
+get_active_themes(min_heat: float | None) -> list[JsonDict]
 
 # Get a theme by id
-get_theme_by_id(theme_id: str) -> dict | None
+get_theme_by_id(theme_id: str) -> JsonDict | None
 
 # Update a theme (e.g. heat_score, status)
-update_theme(theme_id: str, updates: dict) -> dict
+update_theme(theme_id: str, updates: JsonDict) -> JsonDict
 ```
 
 ### Event-Theme Map
+
 ```python
 # Link an event to a theme
-link_event_to_theme(event_id: str, theme_id: str) -> dict
+link_event_to_theme(event_id: str, theme_id: str) -> JsonDict
 
 # Get all events for a theme
-get_events_for_theme(theme_id: str) -> list[dict]
+get_events_for_theme(theme_id: str) -> list[JsonDict]
 ```
 
 ## Example Usage
 
 ```python
+import json
 import uuid
+
+event_id = str(uuid.uuid4())
+storage_path = f"{event_id}.json"
 
 raw_payload = json.dumps(
     {
@@ -259,12 +282,13 @@ raw_payload = json.dumps(
         "source": "reuters",
         "published_at": "2026-03-04T10:00:00Z",
         "title": "US Inflation Surges to 4.2%",
-        "full_text": "US inflation rose to 4.2% in March, exceeding expectations of 3.8%. The Federal Reserve is expected to respond with further rate hikes as price pressures remain elevated across energy and food categories.",
+        "full_text": (
+            "US inflation rose to 4.2% in March, exceeding expectations of 3.8%. "
+            "The Federal Reserve is expected to respond with further rate hikes."
+        ),
         "url": "https://reuters.com/example",
     }
 )
-
-event_id = str(uuid.uuid4())
 
 # upload to storage first
 insert_storage(storage_path, raw_payload)
