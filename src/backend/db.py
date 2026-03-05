@@ -16,9 +16,6 @@ supabase: Client = create_client(url, key)
 # ── Events ────────────────────────────────────────────────────────────────────
 
 
-def insert_event(event: dict) -> dict:
-    return supabase.table("events").insert(event).execute().data[0]
-
 def get_events(
     topic: str | None = None,
     region: str | None = None,
