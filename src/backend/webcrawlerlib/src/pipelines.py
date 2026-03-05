@@ -8,6 +8,7 @@
 from itemadapter import ItemAdapter
 
 
+# TODO: Implement data pipeline after web articles have been scraped by gdelt spider
 class TutorialPipeline:
     def process_item(self, item, spider):
         return item

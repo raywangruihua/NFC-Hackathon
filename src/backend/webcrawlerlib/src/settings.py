@@ -26,6 +26,11 @@ ROBOTSTXT_OBEY = True
 CONCURRENT_REQUESTS_PER_DOMAIN = 1
 DOWNLOAD_DELAY = 1
 
+# GDELT DOC 2.0 defaults (used by gdelt spider)
+GDELT_QUERY = '("credit risk" OR "liquidity risk" OR inflation OR "interest rate" OR recession OR volatility)'
+GDELT_TIMESPAN = "7days"
+GDELT_MAXRECORDS = 10
+
 # Disable cookies (enabled by default)
 #COOKIES_ENABLED = False
 
@@ -46,9 +51,26 @@ DEFAULT_REQUEST_HEADERS = {
 
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
-#DOWNLOADER_MIDDLEWARES = {
-#    "tutorial.middlewares.TutorialDownloaderMiddleware": 543,
-#}
+DOWNLOADER_MIDDLEWARES = {
+    "src.middlewares.QualityDownloaderMiddleware": 543,
+}
+
+# Domain policy: keep empty list to disable allowlist filtering
+ALLOWED_CRAWL_DOMAINS = []
+
+# Middleware retry controls
+CUSTOM_RETRY_HTTP_CODES = [429, 500, 502, 503, 504]
+CUSTOM_RETRY_MAX_TIMES = 3
+RETRY_ENABLED = False
+
+# Markers for common anti-bot/challenge pages
+BLOCK_PAGE_MARKERS = [
+    "access denied",
+    "temporarily unavailable",
+    "verify you are human",
+    "captcha",
+    "request blocked",
+]
 
 # Enable or disable extensions
 # See https://docs.scrapy.org/en/latest/topics/extensions.html

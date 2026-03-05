@@ -1,100 +1,118 @@
-# Define here the models for your spider middleware
-#
-# See documentation in:
-# https://docs.scrapy.org/en/latest/topics/spider-middleware.html
+from urllib.parse import urlparse
 
-from scrapy import signals
-
-# useful for handling different item types with a single interface
-from itemadapter import ItemAdapter
-
-
-class TutorialSpiderMiddleware:
-    # Not all methods need to be defined. If a method is not defined,
-    # scrapy acts as if the spider middleware does not modify the
-    # passed objects.
-
-    @classmethod
-    def from_crawler(cls, crawler):
-        # This method is used by Scrapy to create your spiders.
-        s = cls()
-        crawler.signals.connect(s.spider_opened, signal=signals.spider_opened)
-        return s
-
-    def process_spider_input(self, response, spider):
-        # Called for each response that goes through the spider
-        # middleware and into the spider.
-
-        # Should return None or raise an exception.
-        return None
-
-    def process_spider_output(self, response, result, spider):
-        # Called with the results returned from the Spider, after
-        # it has processed the response.
-
-        # Must return an iterable of Request, or item objects.
-        for i in result:
-            yield i
-
-    def process_spider_exception(self, response, exception, spider):
-        # Called when a spider or process_spider_input() method
-        # (from other spider middleware) raises an exception.
-
-        # Should return either None or an iterable of Request or item objects.
-        pass
-
-    async def process_start(self, start):
-        # Called with an async iterator over the spider start() method or the
-        # matching method of an earlier spider middleware.
-        async for item_or_request in start:
-            yield item_or_request
-
-    def spider_opened(self, spider):
-        spider.logger.info("Spider opened: %s" % spider.name)
+from scrapy.downloadermiddlewares.retry import get_retry_request
+from scrapy.exceptions import IgnoreRequest
+from twisted.internet.error import (
+    ConnectError,
+    ConnectionDone,
+    ConnectionLost,
+    DNSLookupError,
+    TCPTimedOutError,
+    TimeoutError,
+)
 
 
-class TutorialDownloaderMiddleware:
-    # Not all methods need to be defined. If a method is not defined,
-    # scrapy acts as if the downloader middleware does not modify the
-    # passed objects.
+class QualityDownloaderMiddleware:
+    """
+    Implements retry logic. Optional allowlist enforcement.
+    - Retry on retryable HTTP statuses.
+    - Retry on connection/timeout errors.
+    - Retry if body looks like a block/challenge page.
+    """
+
+    NETWORK_EXCEPTIONS = (
+        TimeoutError,
+        TCPTimedOutError,
+        DNSLookupError,
+        ConnectionRefusedError,
+        ConnectionDone,
+        ConnectError,
+        ConnectionLost,
+    )
 
     @classmethod
     def from_crawler(cls, crawler):
-        # This method is used by Scrapy to create your spiders.
-        s = cls()
-        crawler.signals.connect(s.spider_opened, signal=signals.spider_opened)
-        return s
+        instance = cls(crawler)
+        return instance
+
+    def __init__(self, crawler):
+        self.crawler = crawler
+        self.settings = crawler.settings
+
+        # allowlist
+        self.allowed_domains = {
+            d.lower().strip()
+            for d in self.settings.getlist("ALLOWED_CRAWL_DOMAINS")
+            if d and d.strip()
+        }
+        self.retry_http_codes = set(self.settings.getlist("CUSTOM_RETRY_HTTP_CODES"))
+        self.block_markers = [
+            m.lower() for m in self.settings.getlist("BLOCK_PAGE_MARKERS") if m
+        ]
+        self.retry_max_times = self.settings.getint("CUSTOM_RETRY_MAX_TIMES", 3)
 
     def process_request(self, request, spider):
-        # Called for each request that goes through the downloader
-        # middleware.
+        """
+        Filter domains based on allowlist
+        """
+        if not self.allowed_domains:
+            return None
 
-        # Must either:
-        # - return None: continue processing this request
-        # - or return a Response object
-        # - or return a Request object
-        # - or raise IgnoreRequest: process_exception() methods of
-        #   installed downloader middleware will be called
+        netloc = (urlparse(request.url).hostname or "").lower()
+        if netloc and not any(
+            netloc == domain or netloc.endswith("." + domain)
+            for domain in self.allowed_domains
+        ):
+            raise IgnoreRequest(
+                f"Blocked by ALLOWED_CRAWL_DOMAINS policy: {request.url}"
+            )
         return None
 
     def process_response(self, request, response, spider):
-        # Called with the response returned from the downloader.
 
-        # Must either;
-        # - return a Response object
-        # - return a Request object
-        # - or raise IgnoreRequest
+        if response.status in self.retry_http_codes:
+            retry_req = self._retry(request, spider, reason=f"http_{response.status}")
+            if retry_req:
+                return retry_req
+
+        if response.status == 200 and self._looks_blocked(response):
+            retry_req = self._retry(request, spider, reason="blocked_page_marker")
+            if retry_req:
+                return retry_req
+
         return response
 
     def process_exception(self, request, exception, spider):
-        # Called when a download handler or a process_request()
-        # (from other downloader middleware) raises an exception.
+        if isinstance(exception, self.NETWORK_EXCEPTIONS):
+            return self._retry(request, spider, reason=exception.__class__.__name__)
+        return None
 
-        # Must either:
-        # - return None: continue processing this exception
-        # - return a Response object: stops process_exception() chain
-        # - return a Request object: stops process_exception() chain
-        pass
+    def _retry(self, request, spider, reason):
+        """
+        Retry request if max retry times not exceeded.
+        """
+        retry_req = get_retry_request(
+            request=request,
+            spider=spider,
+            reason=reason,
+            max_retry_times=self.retry_max_times,
+            priority_adjust=-1,
+        )
+        if retry_req:
+            retry_times = retry_req.meta.get("retry_times", 0)
+            spider.logger.info(
+                "Retrying %s (reason=%s, retry_times=%s)",
+                request.url,
+                reason,
+                retry_times,
+            )
+        return retry_req
 
-    def spider_opened(self, spider):
-        spider.logger.info("Spider opened: %s" % spider.name)
+    def _looks_blocked(self, response):
+        """
+        Check for block text.
+        """
+        if not self.block_markers:
+            return False
+        body = (response.text or "").lower()
+        return any(marker in body for marker in self.block_markers)
