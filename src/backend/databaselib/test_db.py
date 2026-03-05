@@ -47,6 +47,7 @@ ingest = ingest_raw_article(raw_payload, source)
 
 print(f"✓ Uploaded raw article to storage, {ingest["storage_path"]}")
 
+# ── 2. Get unprocessed articles and process ───────────────────────────────────────
 
 unprocessed = get_unprocessed()
 

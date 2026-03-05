@@ -133,6 +133,20 @@ Grouped clusters of related events identified by the analysis agent.
 | asset_classes | text[] | e.g. [bonds, equities] |
 | created_at | timestamptz | row creation time |
 
+### `raw_ingestions`
+
+Info on articles that have been ingested to storage. Contains both processed and unprocessed articles.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| id | uuid | Primary key |
+| storage_path | text | Storage path of article in Supabase Storage |
+| source | text | Source of article |
+| ingested_at | timestamptz | When article was ingested |
+| processed | bool | Whether article is processed or not |
+| processed_at | timestamptz | When article was processed |
+| event_id | uuid | Foreign key to events table |
+
 ### `event_theme_map`
 
 Many-to-many link between events and themes. One event can belong to multiple
@@ -165,22 +179,6 @@ the full article:
 
 ```text
 memory.metadata.event_id -> events.raw_payload_ref -> Supabase Storage
-```
-
-The UUID is generated in Python **before** the DB insert so the storage path
-and event row can reference the same ID:
-
-```python
-import uuid
-
-event_id = str(uuid.uuid4())
-storage_path = f"{event_id}.json"
-
-# upload to storage first
-insert_storage(storage_path, raw_payload)
-
-# then insert into database with known id
-insert_event({"event_id": event_id, "raw_payload_ref": storage_path, ...})
 ```
 
 ---
@@ -229,7 +227,7 @@ All database interactions go through `db.py`.
 ### Events
 
 ```python
-# Insert a new event (status defaults to pending)
+# Insert a new event
 insert_event(event: Event) -> JsonDict
 
 # Get events with optional filters
@@ -267,19 +265,45 @@ link_event_to_theme(event_id: str, theme_id: str) -> JsonDict
 get_events_for_theme(theme_id: str) -> list[JsonDict]
 ```
 
+### Memory Store
+
+```python
+# Insert into memory store
+insert_memory(content: str, embedding: list[float], content_type: str, metadata: JsonDict
+) -> JsonDict
+
+# Search from memory store (top-k)
+search_memory(
+    embedding: list[float], top_k: int = 5, content_type: str | None = None
+) -> list[JsonDict]
+```
+
+### Storage
+```python
+# Ingest raw article to storage
+ingest_raw_article(raw_payload: str, source: str) -> JsonDict
+
+# Get all unprocessed articles and returns rows from raw_ingestions table
+# Example usage below
+get_unprocessed() -> list[JsonDict]
+
+# Mark article as processed
+mark_processed(ingestion_id: str, event_id: str) -> None
+
+# Get article from storage
+get_full_article(event_id: str) -> JsonDict | None
+```
+
 ## Example Usage
 
 ```python
 import json
-import uuid
 
-event_id = str(uuid.uuid4())
-storage_path = f"{event_id}.json"
-
+# mock payload
+source = "reuters"
 raw_payload = json.dumps(
     {
-        "event_id": event_id,
-        "source": "reuters",
+        "source": source,
         "published_at": "2026-03-04T10:00:00Z",
         "title": "US Inflation Surges to 4.2%",
         "full_text": (
@@ -290,32 +314,42 @@ raw_payload = json.dumps(
     }
 )
 
-<<<<<<< HEAD
-=======
-event_id = str(uuid.uuid4())
-storage_path = f"{event_id}.json"
+# ingests article to storage
+# also adds a row to raw_ingestions
+ingest = ingest_raw_article(raw_payload, source)
 
->>>>>>> 91f862080299ae2bbead17396b385ffa8d7792d8
-# upload to storage first
-insert_storage(storage_path, raw_payload)
+# gets all unprocessed articles from table raw_ingestions
+unprocessed = get_unprocessed()
 
-# then insert event with the known id
-event = insert_event(
-    Event(
-        event_id=event_id,
-        event_type="economic_release",
-        source="reuters",
-        published_at="2026-03-04",
-        region="US",
-        asset_classes=["bonds", "equities"],
-        content="US inflation rose to 4.2% in March, exceeding expectations of 3.8%.",
-        importance_score=0.9,
-        entities={"countries": ["US"]},
-        topic="inflation",
-        sentiment="risk-off",
-        raw_payload_ref=storage_path,
+for ingestion in unprocessed:
+    # download the raw article 
+    raw = supabase.storage.from_("raw-payloads").download(ingestion["storage_path"])
+    # this is the same dict as raw_payload above 
+    payload = json.loads(raw)
+
+    # DO PROCESSING ON ARTICLE HERE
+
+    # create event with processed info
+    # data is mocked here for this example
+    event_id = str(uuid.uuid4())
+    event = insert_event(
+        Event(
+            event_id=event_id,
+            raw_payload_ref=ingestion["storage_path"],
+            source=ingestion["source"],
+            event_type="economic_release",
+            published_at="2026-03-04",
+            region="US",
+            asset_classes=["bonds", "equities"],
+            content="US inflation rose to 4.2% in March, exceeding expectations of 3.8%.",
+            importance_score=0.9,
+            entities={"countries": ["US"]},
+            topic="inflation",
+            sentiment="risk-off",
+        )
     )
-)
+
+    mark_processed(ingestion["id"], event_id)
 ```
 
 ## Serving and product layer
