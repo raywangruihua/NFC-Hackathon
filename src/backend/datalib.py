@@ -1,7 +1,7 @@
 """
 Data collection library
 
-Data collected is based on whether it is valuable for asset management and risk assessment.
+Indicator data collected is based on whether it is valuable for asset management and risk assessment.
 Functions that start with 'get' return data in json formats.
 Functions that start with 'list' return a list of available data.
 
@@ -46,8 +46,9 @@ Issues:
 - FRED
   - 'ism_manufacturing_pmi' and 'gold' series data not available
 
-Scrapes news articles from the following websites (using scrapy):
-- Bloomberg
+Webcrawler crawls news websites by searching key terms via the GDELT API. The crawler can be run via run_gdelt_spider()
+
+TODO: Implement data pipeline for crawler.
 """
 
 #################### Economic Indicator Data API ####################
