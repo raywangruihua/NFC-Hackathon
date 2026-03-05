@@ -24,7 +24,7 @@ supabase.table("events").delete().neq(
     "event_id", "00000000-0000-0000-0000-000000000000"
 ).execute()
 supabase.table("raw_ingestions").delete().neq(
-    "event_id", "00000000-0000-0000-0000-000000000000"
+    "id", "00000000-0000-0000-0000-000000000000"
 ).execute()
 supabase.storage.empty_bucket("raw-payloads")
 

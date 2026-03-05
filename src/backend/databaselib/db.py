@@ -278,7 +278,7 @@ def insert_storage(storage_path: str, raw_payload: str) -> str:
     return storage_path
 
 
-def ingest_raw_article(raw_payload: str, source: str) -> None:
+def ingest_raw_article(raw_payload: str, source: str) -> JsonDict:
     """
     Stores raw articles in database marked as unprocess by default.
 
@@ -296,7 +296,7 @@ def ingest_raw_article(raw_payload: str, source: str) -> None:
     )
 
     # upload entry data to raw ingestions
-    supabase.table("raw_ingestions").insert(
+    return supabase.table("raw_ingestions").insert(
         {
             "storage_path": storage_path,
             "source": source,
