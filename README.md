@@ -104,10 +104,12 @@ Normalized event records. The central table everything else references.
 | region | text | e.g. US, EU |
 | asset_classes | text[] | e.g. [bonds, equities] |
 | content | text | Cleaned article text |
-| importance_score | float | 0–1, filled by enrichment |
+| importance_score | float | 0–1 |
+| entities | dict | e.g. {"countries: ["US", "China"], "tickers": ["SPY", "TLT"]} |
 | topic | text | e.g. inflation, rates, geopolitics |
 | sentiment | text | risk-on, risk-off, neutral |
 | raw_payload_ref | text | Path to raw file in Supabase Storage |
+| created_at | timestamptz | row creation time |
 
 ### `themes`
 Grouped clusters of related events identified by the analysis agent.
@@ -116,10 +118,14 @@ Grouped clusters of related events identified by the analysis agent.
 |---|---|---|
 | theme_id | uuid | Primary key |
 | title | text | Human-readable theme name |
+| description | text | Description of theme |
 | status | text | active, cooling, inactive |
 | heat_score | float | How active/relevant the theme is |
 | first_seen_at | timestamptz | When theme was first detected |
 | last_seen_at | timestamptz | When theme last had new events |
+| region | text | e.g. US, EU |
+| asset_classes | text[] | e.g. [bonds, equities] |
+| created_at | timestamptz | row creation time |
 
 ### `event_theme_map`
 Many-to-many link between events and themes. One event can belong to multiple themes.
@@ -156,7 +162,7 @@ event_id = str(uuid.uuid4())
 storage_path = f"{event_id}.json"
 
 # upload to storage first
-supabase.storage.from_("raw-payloads").upload(path=storage_path, file=payload)
+insert_storage(storage_path, raw_payload)
 
 # then insert into database with known id
 insert_event({"event_id": event_id, "raw_payload_ref": storage_path, ...})
@@ -207,7 +213,7 @@ All database interactions go through `db.py`.
 ### Events
 ```python
 # Insert a new event (status defaults to pending)
-insert_event(event: dict) -> dict
+insert_event(event: Event) -> dict
 
 # Get events with optional filters
 get_events(
@@ -221,7 +227,7 @@ get_events(
 ### Themes
 ```python
 # Insert a new theme
-insert_theme(theme: dict) -> dict
+insert_theme(theme: Theme) -> dict
 
 # Get all active themes
 get_active_themes(min_heat: float | None) -> list[dict]
@@ -247,8 +253,6 @@ get_events_for_theme(theme_id: str) -> list[dict]
 ```python
 import uuid
 
-event_id = str(uuid.uuid4())
-
 raw_payload = json.dumps(
     {
         "event_id": event_id,
@@ -260,28 +264,28 @@ raw_payload = json.dumps(
     }
 )
 
+event_id = str(uuid.uuid4())
+
 # upload to storage first
-storage_path = f"{event_id}.json"
-supabase.storage.from_("raw-payloads").upload(
-    path=storage_path,
-    file=raw_payload.encode("utf-8"),
-    file_options={"content-type": "application/json"}
-)
+insert_storage(storage_path, raw_payload)
 
 # then insert event with the known id
-event = insert_event({
-    "event_id": event_id,
-    "raw_payload_ref": storage_path,
-    "event_type": "economic_release",
-    "source": "reuters",
-    "published_at": "2026-03-04T10:00:00Z",
-    "region": "US",
-    "asset_classes": ["bonds", "equities"],
-    "content": "US inflation rose to 4.2% in March, exceeding expectations of 3.8%.",
-    "importance_score": 0.9,
-    "topic": "inflation",
-    "sentiment": "risk-off"
-})
+event = insert_event(
+    Event(
+        event_id=event_id,
+        event_type="economic_release",
+        source="reuters",
+        published_at="2026-03-04",
+        region="US",
+        asset_classes=["bonds", "equities"],
+        content="US inflation rose to 4.2% in March, exceeding expectations of 3.8%.",
+        importance_score=0.9,
+        entities={"countries": ["US"]},
+        topic="inflation",
+        sentiment="risk-off",
+        raw_payload_ref=storage_path,
+    )
+)
 ```
 
 ## Serving and product layer

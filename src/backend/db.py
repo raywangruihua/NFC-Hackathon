@@ -1,5 +1,7 @@
 from dotenv import load_dotenv
 from supabase import create_client, Client
+from dataclasses import dataclass
+from datetime import datetime
 import os
 
 load_dotenv()
@@ -15,6 +17,21 @@ supabase: Client = create_client(url, key)
 
 # ── Events ────────────────────────────────────────────────────────────────────
 
+
+@dataclass
+class Event:
+    event_id: str
+    event_type: str
+    source: str
+    published_at: str
+    region: str
+    asset_classes: list[str]
+    content: str
+    importance_score: float
+    entities: dict
+    topic: str
+    sentiment: str
+    raw_payload_ref: str
 
 def get_events(
     topic: str | None = None,
@@ -42,12 +59,20 @@ def get_events(
     return query.order("published_at", desc=True).execute().data
 
 
-def insert_event(event: dict) -> dict:
-    return supabase.table("events").insert(event).execute().data[0]
+def insert_event(event: Event) -> dict:
+    return supabase.table("events").insert(vars(event)).execute().data[0]
 
 
 # ── Themes ────────────────────────────────────────────────────────────────────
 
+@dataclass
+class Theme:
+    title: str
+    description: str
+    status: str
+    heat_score: str
+    asset_classes: list[str]
+    region: str
 
 def get_active_themes(min_heat: float | None = None) -> list[dict]:
     query = supabase.table("themes").select("*").eq("status", "active")
@@ -63,8 +88,8 @@ def get_theme_by_id(theme_id: str) -> dict | None:
     return result.data[0] if result.data else None
 
 
-def insert_theme(theme: dict) -> dict:
-    return supabase.table("themes").insert(theme).execute().data[0]
+def insert_theme(theme: Theme) -> dict:
+    return supabase.table("themes").insert(vars(theme)).execute().data[0]
 
 
 def update_theme(theme_id: str, updates: dict) -> dict:
@@ -215,6 +240,14 @@ def search_memory(
 
     return result
 
+# ── Storage ──────────────────────────────────────────────────────────────
+
+def insert_storage(storage_path: str, raw_payload: str) -> str:
+    supabase.storage.from_("raw-payloads").upload(
+        path=storage_path,
+        file=raw_payload.encode("utf-8"),
+        file_options={"content-type": "application/json"},
+    )
 
 def get_full_article(event_id: str) -> dict | None:
     event = supabase.table("events").select("*").eq("event_id", event_id).execute()

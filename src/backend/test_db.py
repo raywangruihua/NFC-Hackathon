@@ -1,6 +1,8 @@
 import json
-from db import supabase, insert_memory, search_memory, get_full_article
+from db import supabase, insert_storage, insert_event, insert_memory, insert_theme, search_memory, get_full_article, Event, Theme
 from embeddings import embed_document, embed_query
+import uuid
+from datetime import datetime, timezone
 
 # ── 0. Cleanup previous test data ────────────────────────────────────────────
 supabase.table("event_theme_map").delete().neq(
@@ -21,39 +23,68 @@ supabase.table("themes").delete().neq(
 supabase.table("events").delete().neq(
     "event_id", "00000000-0000-0000-0000-000000000000"
 ).execute()
+supabase.storage.empty_bucket("raw-payloads")
 
 print("✓ Cleaned up previous test data")
 
-# ── 1. Insert a test event ────────────────────────────────────────────────────
+# ── 1. Upload a raw article to storage ───────────────────────────────────────
 
-event = supabase.table("events").insert({
-    "event_type": "economic_release",
-    "source": "reuters",
-    "published_at": "2026-03-04T10:00:00Z",
-    "region": "US",
-    "asset_classes": ["bonds", "equities"],
-    "content": "US inflation rose to 4.2% in March, exceeding expectations of 3.8%.",
-    "importance_score": 0.9,
-    "topic": "inflation",
-    "sentiment": "risk-off"
-}).execute().data[0]
+event_id = str(uuid.uuid4())  # reuse event from earlier tests
+
+raw_payload = json.dumps(
+    {
+        "event_id": event_id,
+        "source": "reuters",
+        "published_at": "2026-03-04T10:00:00Z",
+        "title": "US Inflation Surges to 4.2%",
+        "full_text": "US inflation rose to 4.2% in March, exceeding expectations of 3.8%. The Federal Reserve is expected to respond with further rate hikes as price pressures remain elevated across energy and food categories.",
+        "url": "https://reuters.com/example",
+    }
+)
+
+storage_path = f"{event_id}.json"
+
+insert_storage(storage_path, raw_payload)
+
+print(f"✓ Uploaded raw article to storage: {storage_path}")
+
+# ── 2. Insert a test event ────────────────────────────────────────────────────
+
+event = insert_event(
+    Event(
+        event_id=event_id,
+        event_type="economic_release",
+        source="reuters",
+        published_at="2026-03-04",
+        region="US",
+        asset_classes=["bonds", "equities"],
+        content="US inflation rose to 4.2% in March, exceeding expectations of 3.8%.",
+        importance_score=0.9,
+        entities={"countries": ["US"]},
+        topic="inflation",
+        sentiment="risk-off",
+        raw_payload_ref=storage_path,
+    )
+)
 
 print(f"✓ Inserted event: {event['event_id']}")
 
-# ── 2. Insert a test theme ────────────────────────────────────────────────────
+# ── 3. Insert a test theme ────────────────────────────────────────────────────
 
-theme = supabase.table("themes").insert({
-    "title": "US Inflation Surge",
-    "description": "Persistent above-target inflation in the US",
-    "status": "active",
-    "heat_score": 0.85,
-    "region": "US",
-    "asset_classes": ["bonds", "equities"]
-}).execute().data[0]
+theme = insert_theme(
+    Theme(
+        title="US Inflation Surge",
+        description="Persistent above-target inflation in the US",
+        status="active",
+        heat_score=0.85,
+        asset_classes=["bonds", "equities"],
+        region="US"
+    )
+)
 
 print(f"✓ Inserted theme: {theme['theme_id']}")
 
-# ── 3. Link event to theme ────────────────────────────────────────────────────
+# ── 4. Link event to theme ────────────────────────────────────────────────────
 
 supabase.table("event_theme_map").insert({
     "event_id": event["event_id"],
@@ -62,7 +93,7 @@ supabase.table("event_theme_map").insert({
 
 print(f"✓ Linked event to theme")
 
-# ── 4. Insert into memory store ───────────────────────────────────────────────
+# ── 5. Insert into memory store ───────────────────────────────────────────────
 
 embedding = embed_document(event["content"])
 memory = insert_memory(
@@ -81,7 +112,7 @@ memory = insert_memory(
 
 print(f"✓ Inserted memory: {memory['id']}")
 
-# ── 5. Search memory ──────────────────────────────────────────────────────────
+# ── 6. Search memory ──────────────────────────────────────────────────────────
 
 query_embedding = embed_query("high inflation exceeding expectations")
 results = search_memory(query_embedding, top_k=3)
@@ -90,40 +121,8 @@ print(f"\n✓ Search results for 'high inflation exceeding expectations':")
 for r in results:
     print(f"  similarity: {r['similarity']:.4f} | {r['content'][:80]}")
 
-# ── 6. Upload a raw article to storage ───────────────────────────────────────
 
-event_id = event["event_id"]  # reuse event from earlier tests
-
-raw_payload = json.dumps(
-    {
-        "event_id": event_id,
-        "source": "reuters",
-        "published_at": "2026-03-04T10:00:00Z",
-        "title": "US Inflation Surges to 4.2%",
-        "full_text": "US inflation rose to 4.2% in March, exceeding expectations of 3.8%. The Federal Reserve is expected to respond with further rate hikes as price pressures remain elevated across energy and food categories.",
-        "url": "https://reuters.com/example",
-    }
-)
-
-storage_path = f"{event_id}.json"
-
-supabase.storage.from_("raw-payloads").upload(
-    path=storage_path,
-    file=raw_payload.encode("utf-8"),
-    file_options={"content-type": "application/json"},
-)
-
-print(f"✓ Uploaded raw article to storage: {storage_path}")
-
-# ── 7. Update event with storage reference ────────────────────────────────────
-
-supabase.table("events").update({"raw_payload_ref": storage_path}).eq(
-    "event_id", event_id
-).execute()
-
-print(f"✓ Updated event with raw_payload_ref")
-
-# ── 8. Retrieve full article ──────────────────────────────────────────────────
+# ── 7. Retrieve full article ──────────────────────────────────────────────────
 
 article = get_full_article(event_id)
 
