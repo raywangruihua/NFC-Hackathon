@@ -1,66 +1,47 @@
-# src/backend/analysislib/test_analysis.py
+# backend/analysislib/test_analysis.py
 from macro_themes import group_events_into_themes
 from heat_score import calculate_theme_heat
-import datetime
-import uuid
+from market_impact import generate_market_impact
 
-# Mock processed events (like what your pipeline would output)
-processed_events = [
+# Example events JSON (simulate what comes from your previous layer)
+example_events = [
     {
-        "event_id": str(uuid.uuid4()),
-        "event_type": "news",
-        "source": "finance.yahoo.com",
-        "published_at": "2026-03-04T15:55:12.000Z",
-        "region": "US",
-        "asset_classes": ["equities", "commodities"],
-        "content": "US inflation rose to 4.2% in March...",
-        "importance_score": 0.61,
-        "entities": {"tickers": ["USB", "SPY"], "countries": ["United States"]},
         "topic": "inflation",
+        "asset_classes": ["bonds", "equities"],
+        "importance_score": 0.59,
         "sentiment": "risk-off",
-        "raw_payload_ref": "raw/https://...",
-        "created_at": datetime.datetime.now().isoformat(),
+        "published_at": "2026-03-04T10:00:00Z"
     },
     {
-        "event_id": str(uuid.uuid4()),
-        "event_type": "news",
-        "source": "bloomberg.com",
-        "published_at": "2026-03-05T10:00:00.000Z",
-        "region": "US",
-        "asset_classes": ["bonds"],
-        "content": "Fed hints at interest rate hike...",
-        "importance_score": 0.9,
-        "entities": {"tickers": ["TLT"], "countries": ["US"]},
         "topic": "interest rate",
+        "asset_classes": ["bonds"],
+        "importance_score": 0.8,
         "sentiment": "risk-off",
-        "raw_payload_ref": "raw/https://...",
-        "created_at": datetime.datetime.now().isoformat(),
+        "published_at": "2026-03-04T11:00:00Z"
     },
     {
-        "event_id": str(uuid.uuid4()),
-        "event_type": "news",
-        "source": "bloomberg.com",
-        "published_at": "2026-03-05T10:00:00.000Z",
-        "region": "US",
-        "asset_classes": ["bonds"],
-        "content": "Fed hints at interest rate hike...",
-        "importance_score": 0.9,
-        "entities": {"tickers": ["TLT"], "countries": ["US"]},
         "topic": "interest rate",
-        "sentiment": "risk-off",
-        "raw_payload_ref": "raw/https://...",
-        "created_at": datetime.datetime.now().isoformat(),
+        "asset_classes": ["equities"],
+        "importance_score": 1.2,
+        "sentiment": "risk-on",
+        "published_at": "2026-03-05T09:00:00Z"
     }
 ]
 
-# Example usage (Add to README):
-# with open("processed_articles.json") as f:
-#    processed_events = json.load(f)
+# 1. Group into themes
+themes = group_events_into_themes(example_events)
+print("Grouped themes:")
+for t in themes:
+    print(t["title"], "Events:", len(t["events"]))
 
-
-# Run analysis layer
-themes = group_events_into_themes(processed_events)
+# 2. Calculate heat
 themes_with_heat = calculate_theme_heat(themes)
-
+print("\nThemes with heat scores:")
 for t in themes_with_heat:
-    print(f"Theme: {t['title']}, Heat: {t['heat_score']}, Events: {len(t['events'])}")
+    print(t["title"], "Heat:", t["heat_score"])
+
+# 3. Generate market impact
+market_summary = generate_market_impact(themes_with_heat)
+print("\nMarket impact summary:")
+for m in market_summary:
+    print(m)
