@@ -1,0 +1,15 @@
+from ticker_loader import TICKER_SET
+from extractor import extract_entities
+
+article = {
+    "title": "Is U.S. Bancorp Stock Outperforming the S&P 500?",
+    "text": (
+        "U.S. Bancorp (USB) is one of the largest regional banks in the United States. "
+        "Meanwhile, its peer PNC has outperformed the S&P 500 (SPY) this year. "
+        "The stock has slumped slightly on a YTD basis but surged 19.1% over the past 52 weeks."
+    )
+}
+
+result = extract_entities(article["text"])
+print(f"Tickers   → {result['tickers']}")
+print(f"Countries → {result['countries']}")
