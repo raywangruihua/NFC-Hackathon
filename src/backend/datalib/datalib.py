@@ -351,6 +351,7 @@ def run_gdelt_spider(
 
     query = f"{query} sourcelang:{language}"
 
+    os.environ.setdefault("SCRAPY_SETTINGS_MODULE", "backend.webcrawlerlib.settings")
     settings = get_project_settings()
     settings.set("LOG_LEVEL", "WARNING", priority=SETTINGS_PRIORITIES["cmdline"])
     settings.set("LOGSTATS_INTERVAL", 0, priority=SETTINGS_PRIORITIES["cmdline"])
