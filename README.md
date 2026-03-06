@@ -76,7 +76,167 @@ News article output format.
 ```
 
 ## Normalisation and enrichment
+# dataprocesslib
 
+NLP enrichment pipeline for financial news articles. Transforms raw article JSON into a structured event schema ready for database insertion.
+
+---
+
+## Folder Structure
+
+```
+dataprocesslib/
+├── pipeline.py           # Main entry point — orchestrates the full enrichment pipeline
+└── processors/
+    ├── extractor.py      # Ticker and country extraction from article text
+    ├── ticker_loader.py  # Fetches and caches ticker reference set from Wikipedia
+    ├── importance.py     # Importance scoring (0.0 – 1.0)
+    ├── sentiments.py     # Sentiment classification via FinBERT
+    └── __init__.py
+```
+
+---
+
+## Modules
+
+### `pipeline.py`
+Main entry point. Reads raw article JSON, runs all enrichment steps, and outputs records matching the unified event schema.
+
+**Input**
+```json
+{
+  "title": "...",
+  "text": "...",
+  "source": "finance.yahoo.com",
+  "sourcecountry": "United States",
+  "published_at": "2026-03-04T15:55:12.000Z",
+  "url": "https://...",
+  "fetch_error": null
+}
+```
+
+**Output**
+```json
+{
+  "event_id": "uuid",
+  "event_type": "news",
+  "source": "finance.yahoo.com",
+  "published_at": "2026-03-04T15:55:12.000Z",
+  "region": "US",
+  "asset_classes": ["equities", "commodities"],
+  "content": "cleaned article text",
+  "importance_score": 0.61,
+  "entities": { "tickers": ["USB", "SPY"], "countries": ["United States"] },
+  "topic": null,
+  "sentiment": "risk-off",
+  "raw_payload_ref": "raw/https://...",
+  "created_at": "2026-03-06T10:00:00.000Z"
+}
+```
+
+**Usage**
+```bash
+python pipeline.py
+# reads articles.json → writes output.json + skipped.json
+```
+
+Articles with `fetch_error` are skipped and written to `skipped.json`. Articles with content shorter than 150 characters or flagged as scrape failures are processed with null NLP fields.
+
+---
+
+### `processors/extractor.py`
+Extracts tickers and countries from article text.
+
+- **Tickers** — regex match (`[A-Z]{3,5}`) against a reference set loaded from `ticker_loader.py`. Two-letter tickers on a whitelist (`GE`, `GS`, `MS`, `BA` etc.) are also included.
+- **Countries** — spaCy `en_core_web_trf` GPE entity label, filtered against a known country list to exclude cities, regions, and industrial sites.
+
+```python
+from processors.extractor import extract_entities
+
+extract_entities("U.S. Bancorp (USB) outperformed the S&P 500 (SPY)...")
+# → {"tickers": ["SPY", "USB"], "countries": ["United States"]}
+```
+
+---
+
+### `processors/ticker_loader.py`
+Fetches the ticker reference set from Wikipedia (S&P 500, NASDAQ-100, Dow Jones) and caches it locally to `ticker_cache.json`.
+
+- First run fetches ~600 tickers from Wikipedia and writes the cache
+- Subsequent runs load from cache instantly
+- Falls back to a hardcoded set if network is unavailable
+
+```python
+from processors.ticker_loader import TICKER_SET, refresh
+
+# Force a fresh fetch and overwrite cache
+refresh()
+```
+
+Delete `ticker_cache.json` to trigger a refresh on the next run.
+
+---
+
+### `processors/importance.py`
+Scores each article's market importance on a 0.0 – 1.0 scale using three signals:
+
+| Signal | Weight | Logic |
+|---|---|---|
+| Source tier | 50% | Known sources rated 0.3 – 1.0 (Reuters/Bloomberg = 1.0, Yahoo Finance = 0.5) |
+| Entities | 30% | Number of tickers and countries mentioned |
+| Recency | 20% | Linear decay from 1.0 → 0.0 over 24 hours |
+
+```python
+from processors.importance import score_importance
+
+score_importance(
+    source       = "reuters.com",
+    entities     = {"tickers": ["SPY", "TLT"], "countries": ["US", "China"]},
+    published_at = "2026-03-06T10:00:00.000Z"
+)
+# → 0.87
+```
+
+---
+
+### `processors/sentiments.py`
+Classifies article text as `risk-on`, `risk-off`, or `neutral` using [ProsusAI/FinBERT](https://huggingface.co/ProsusAI/finbert), a BERT model fine-tuned on financial news.
+
+FinBERT's native labels (`positive`, `negative`, `neutral`) are remapped to risk appetite language:
+
+| FinBERT | Output |
+|---|---|
+| positive | risk-on |
+| negative | risk-off |
+| neutral | neutral |
+
+```python
+from processors.sentiments import predict_one, predict_scalar
+
+predict_one("Apple beats earnings expectations by 20%")
+# → "risk-on"
+
+predict_scalar(["Fed signals rate hikes", "Markets steady"], batch_size=32)
+# → ["risk-off", "neutral"]
+```
+
+---
+
+## Installation
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## Known Limitations
+
+- **Country extraction** tags cities and regions as countries if not filtered — articles with heavy geopolitical content may over-report country counts
+- **Ticker extraction** misses companies referenced by full name only (e.g. "U.S. Bancorp" without the `USB` symbol)
+- **FinBERT** was trained on short financial headlines — sentiment reliability degrades on long-form articles (>512 tokens are truncated)
+- **`published_at`** is null for a significant portion of ingested articles, defaulting recency score to 0.5
+- **`topic`** field is reserved for a future classifier and is always `null`
 ## Analysis layer
 
 ## Storage
