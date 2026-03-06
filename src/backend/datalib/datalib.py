@@ -360,6 +360,9 @@ def run_gdelt_spider(
 
     # debug
     if output:
+        pipelines = dict(settings.getdict("ITEM_PIPELINES"))
+        pipelines.pop("backend.webcrawlerlib.pipelines.RawPayloadStoragePipeline", None)
+        settings.set("ITEM_PIPELINES", pipelines) # disable pipeline
         settings.set(
             "FEEDS",
             {

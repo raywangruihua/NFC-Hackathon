@@ -118,6 +118,9 @@ class GdeltSpider(scrapy.Spider):
             or response.css("[class*='author']::text").get()
         )
 
+        paragraph_text_nodes = response.xpath("//p//text()").getall()
+        text = " ".join(t.strip() for t in paragraph_text_nodes if t and t.strip())
+
         yield NewsItem(
             title=gdelt_meta.get("title"),
             language=gdelt_meta.get("language"),
@@ -126,7 +129,7 @@ class GdeltSpider(scrapy.Spider):
             url=response.url,
             published_at=published_at if published_at else None,
             author=author.strip() if author else None,
-            raw=response.text,
+            text=text,
             tone=gdelt_meta.get("tone"),
             fetch_error=None,
         )
@@ -146,7 +149,7 @@ class GdeltSpider(scrapy.Spider):
             url=request.url,
             published_at=None,
             author=None,
-            raw=None,
+            text=None,
             tone=gdelt_meta.get("tone"),
             fetch_error=str(failure.value),
         )

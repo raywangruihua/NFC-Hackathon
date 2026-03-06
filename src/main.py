@@ -9,4 +9,4 @@ query_terms = [
     "credit spread",
     "geopolitical risk",
 ]
-run_gdelt_spider(query_terms, "7days", 100, True)
+run_gdelt_spider(query_terms, "1year", 250, True)
