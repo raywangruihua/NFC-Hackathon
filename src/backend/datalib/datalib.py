@@ -326,11 +326,10 @@ def run_gdelt_spider(
         timespan: str, 
         maxrecords: int,
         output: Optional[bool] = False,
-        language: str = "english",
+        language: Optional[str] = "english",
 ) -> None:
     """
     Run the GDELT spider to crawl and scrape news articles.
-    TODO: Implement pipeline.py to save scraped data into raw database.
 
     Args:
         query_terms: List of query terms to search articles.
@@ -350,7 +349,6 @@ def run_gdelt_spider(
     else:
         query = query_terms
 
-    # Restrict GDELT results to the specified language
     query = f"{query} sourcelang:{language}"
 
     settings = get_project_settings()
