@@ -10,7 +10,8 @@ class GdeltSpider(scrapy.Spider):
 
     def start_requests(self):
         """
-        Returns HTTP requests from GDELT endpoint. Configure query, timespan and maxrecords via settings.py
+        Start crawling by sending a request to GDELT endpoint, which returns a list of articles related to the query.
+        Default values for query, timespan and maxrecords are used if not founding in crawler settings.
         """
         query = self.settings.get(
             "GDELT_QUERY",
@@ -28,10 +29,19 @@ class GdeltSpider(scrapy.Spider):
             "&format=json"
             "&sort=datedesc"
         )
+        self.logger.warning(
+            "Starting GDELT crawl: query=%r timespan=%s maxrecords=%s",
+            query,
+            timespan,
+            maxrecords,
+        )
 
-        yield scrapy.Request(url, callback=self.parse_gdelt_feed)
+        yield scrapy.Request(url, callback=self.parse_gdelt_feed) # get gdelt response
 
     def parse_gdelt_feed(self, response):
+        """
+        Iterate, crawl and scrape articles returned by GDELT endpoint.
+        """
         if response.status != 200:
             self.logger.warning("GDELT API non-200 response: status=%s url=%s", response.status, response.url)
             return
@@ -60,9 +70,16 @@ class GdeltSpider(scrapy.Spider):
             self.logger.warning("No articles returned from GDELT DOC 2.0")
             return
 
+        self.logger.warning("GDELT returned %s candidate articles", len(articles))
+
         for article in articles:
             article_url = article.get("url")
             if not article_url:
+                continue
+
+            lang = (article.get("language") or "").lower()
+            if lang and lang != "english":
+                self.logger.info("Skipping non-English article lang=%s url=%s", lang, article_url)
                 continue
 
             meta = {
@@ -85,6 +102,9 @@ class GdeltSpider(scrapy.Spider):
             )
 
     def parse_article(self, response):
+        """
+        Return metadata and raw article HTML as JSON.
+        """
         gdelt_meta = response.meta.get("gdelt", {})
 
         published_at = (
@@ -98,10 +118,8 @@ class GdeltSpider(scrapy.Spider):
             or response.css("[class*='author']::text").get()
         )
 
-        paragraphs = response.css("article p::text, main p::text, p::text").getall()
-        body = " ".join(p.strip() for p in paragraphs if p.strip())
-
-        path_parts = [p for p in urlparse(response.url).path.split("/") if p]
+        paragraph_text_nodes = response.xpath("//p//text()").getall()
+        text = " ".join(t.strip() for t in paragraph_text_nodes if t and t.strip())
 
         yield NewsItem(
             title=gdelt_meta.get("title"),
@@ -111,13 +129,15 @@ class GdeltSpider(scrapy.Spider):
             url=response.url,
             published_at=published_at if published_at else None,
             author=author.strip() if author else None,
-            section=path_parts[0] if path_parts else None,
-            body=body,
+            text=text,
             tone=gdelt_meta.get("tone"),
             fetch_error=None,
         )
 
     def parse_article_error(self, failure):
+        """
+        Tries to return as much information as possible as JSON during failure.
+        """
         request = failure.request
         gdelt_meta = request.meta.get("gdelt", {})
         self.logger.warning("Failed to fetch article url=%s err=%s", request.url, failure.value)
@@ -129,8 +149,7 @@ class GdeltSpider(scrapy.Spider):
             url=request.url,
             published_at=None,
             author=None,
-            section=None,
-            body=None,
+            text=None,
             tone=gdelt_meta.get("tone"),
             fetch_error=str(failure.value),
         )

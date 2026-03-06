@@ -9,10 +9,14 @@
 
 BOT_NAME = "webcrawlerlib"
 
-SPIDER_MODULES = ["src.spiders"]
-NEWSPIDER_MODULE = "src.spiders"
+SPIDER_MODULES = ["backend.webcrawlerlib.spiders"]
+NEWSPIDER_MODULE = "backend.webcrawlerlib.spiders"
 
 ADDONS = {}
+
+# Logging: show only high-signal crawl diagnostics by default.
+LOG_LEVEL = "WARNING"
+LOG_SHORT_NAMES = True
 
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent
@@ -27,7 +31,7 @@ CONCURRENT_REQUESTS_PER_DOMAIN = 1
 DOWNLOAD_DELAY = 1
 
 # GDELT DOC 2.0 defaults (used by gdelt spider)
-GDELT_QUERY = '("credit risk" OR "liquidity risk" OR inflation OR "interest rate" OR recession OR volatility)'
+GDELT_QUERY = '("credit risk" OR "liquidity risk" OR inflation OR "interest rate" OR recession OR volatility) sourcelang:english'
 GDELT_TIMESPAN = "7days"
 GDELT_MAXRECORDS = 10
 
@@ -52,7 +56,7 @@ DEFAULT_REQUEST_HEADERS = {
 # Enable or disable downloader middlewares
 # See https://docs.scrapy.org/en/latest/topics/downloader-middleware.html
 DOWNLOADER_MIDDLEWARES = {
-    "src.middlewares.QualityDownloaderMiddleware": 543,
+    "backend.webcrawlerlib.middlewares.QualityDownloaderMiddleware": 543,
 }
 
 # Domain policy: keep empty list to disable allowlist filtering
@@ -80,9 +84,9 @@ BLOCK_PAGE_MARKERS = [
 
 # Configure item pipelines
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
-#ITEM_PIPELINES = {
-#    "tutorial.pipelines.TutorialPipeline": 300,
-#}
+ITEM_PIPELINES = {
+    "backend.webcrawlerlib.pipelines.RawPayloadStoragePipeline": 300,
+}
 
 # Enable and configure the AutoThrottle extension (disabled by default)
 # See https://docs.scrapy.org/en/latest/topics/autothrottle.html

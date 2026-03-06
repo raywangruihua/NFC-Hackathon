@@ -315,47 +315,65 @@ def test_fred() -> None:
 ############################# webcrawler #############################
 
 from scrapy.crawler import CrawlerProcess
+from scrapy.settings import SETTINGS_PRIORITIES
 from scrapy.utils.project import get_project_settings
-from webcrawlerlib.src.spiders.gdelt_spider import GdeltSpider
+from ..webcrawlerlib.spiders.gdelt_spider import GdeltSpider
 
 
 # Main gdelt webcrawler API endpoint
 def run_gdelt_spider(
         query_terms: str | List[str], 
         timespan: str, 
-        maxrecords: int
+        maxrecords: int,
+        output: Optional[bool] = False,
+        language: Optional[str] = "english",
 ) -> None:
     """
     Run the GDELT spider to crawl and scrape news articles.
-    TODO: Implement pipeline.py to save scraped data into raw database.
 
     Args:
         query_terms: List of query terms to search articles.
         timespan: Example formats = 1day, 7days, 24h, 1week, 3months
         maxrecords: The maximum number of articles to scrape.
+        output: Output scraped data to gdelt_spider_output.json in current directory.
+        language: Source language filter for GDELT (default: "english").
     """
     if isinstance(query_terms, List):
-        query = f"{" OR ".join(f'"{t}"' if " " in t else t for t in query_terms)}"
+        quoted = []
+        for term in query_terms:
+            if " " in term:
+                quoted.append(f'"{term}"')
+            else:
+                quoted.append(term)
+        query = f"({' OR '.join(quoted)})"
     else:
         query = query_terms
 
+    query = f"{query} sourcelang:{language}"
+
     settings = get_project_settings()
+    settings.set("LOG_LEVEL", "WARNING", priority=SETTINGS_PRIORITIES["cmdline"])
+    settings.set("LOGSTATS_INTERVAL", 0, priority=SETTINGS_PRIORITIES["cmdline"])
     settings.set("GDELT_QUERY", query)
     settings.set("GDELT_TIMESPAN", timespan)
     settings.set("GDELT_MAXRECORDS", maxrecords)
 
     # debug
-    # settings.set(
-    #     "FEEDS",
-    #     {
-    #         "gdelt_debug.json": {
-    #             "format": "json",
-    #             "encoding": "utf-8",
-    #             "indent": 2,
-    #             "overwrite": True,
-    #         }
-    #     },
-    # )
+    if output:
+        pipelines = dict(settings.getdict("ITEM_PIPELINES"))
+        pipelines.pop("backend.webcrawlerlib.pipelines.RawPayloadStoragePipeline", None)
+        settings.set("ITEM_PIPELINES", pipelines) # disable pipeline
+        settings.set(
+            "FEEDS",
+            {
+                "gdelt_spider_output.json": {
+                    "format": "json",
+                    "encoding": "utf-8",
+                    "indent": 2,
+                    "overwrite": True,
+                }
+            },
+        )
 
     process = CrawlerProcess(settings)
     process.crawl(GdeltSpider)
@@ -363,4 +381,4 @@ def run_gdelt_spider(
 
 
 if __name__ == "__main__":
-    run_gdelt_spider(["ukraine war"], "7days", 10)
+    print("Hello World!")
