@@ -1,9 +1,13 @@
 # backend/analysislib/test_analysis.py
+
 from macro_themes import group_events_into_themes
 from heat_score import calculate_theme_heat
 from market_impact import generate_market_impact
+from portfolio_analysis import analyze_portfolio_risk
 
-# Example events JSON (simulate what comes from your previous layer)
+# --------------------------
+# Example events
+# --------------------------
 example_events = [
     {
         "topic": "inflation",
@@ -28,20 +32,30 @@ example_events = [
     }
 ]
 
-# 1. Group into themes
+# --------------------------
+# Run pipeline
+# --------------------------
 themes = group_events_into_themes(example_events)
-print("Grouped themes:")
-for t in themes:
-    print(t["title"], "Events:", len(t["events"]))
-
-# 2. Calculate heat
 themes_with_heat = calculate_theme_heat(themes)
-print("\nThemes with heat scores:")
-for t in themes_with_heat:
-    print(t["title"], "Heat:", t["heat_score"])
-
-# 3. Generate market impact
 market_summary = generate_market_impact(themes_with_heat)
-print("\nMarket impact summary:")
-for m in market_summary:
-    print(m)
+
+portfolio = [
+    {"ticker": "AAPL", "asset_class": "equities", "sector": "technology", "weight": 0.35},
+    {"ticker": "JPM", "asset_class": "equities", "sector": "financials", "weight": 0.25},
+    {"ticker": "TLT", "asset_class": "bonds", "sector": "treasury", "weight": 0.25},
+    {"ticker": "GLD", "asset_class": "commodities", "sector": "gold", "weight": 0.15}
+]
+
+portfolio_risk = analyze_portfolio_risk(market_summary, portfolio)
+
+# --------------------------
+# Dashboard-style output
+# --------------------------
+print(f"\nOverall Portfolio Risk: {portfolio_risk['overall_risk']}% ({portfolio_risk['overall_risk_level']})")
+
+print("\nDetailed Portfolio Risk Alerts:")
+for alert in portfolio_risk['alerts']:
+    print(f"- Theme: {alert['theme']}, Direction: {alert['direction']}, "
+          f"Heat: {alert['heat_score']}, Exposure: {alert['portfolio_exposure']}, "
+          f"Risk Level: {alert['risk_level']}")
+    print(f"  Message: {alert['message']}")
