@@ -2,6 +2,17 @@
 
 This initial prototype follows a monolithic structure.
 
+## Setup Guide
+
+1. Run main.py in backend/src
+
+2. Start frontend server:
+
+```bash
+cd frontend
+npm run dev
+```
+
 ## Source ingestion
 
 Data is taken from publicly available APIs and scraped from reputable
