@@ -1,3 +1,14 @@
+import type { CSSProperties } from "react";
+import {
+  Bell,
+  Bot,
+  ChartCandlestick,
+  Earth,
+  Newspaper,
+  Thermometer,
+} from "lucide-react";
+import styles from "./page.module.css";
+
 type SeriesCard = {
   name: string;
   value: string;
@@ -10,6 +21,7 @@ type SeriesCard = {
 type TimelineEvent = {
   date: string;
   title: string;
+  text: string;
   source: string;
   impact: "High" | "Medium" | "Low";
 };
@@ -31,9 +43,44 @@ type AlertRule = {
   detail: string;
 };
 
-const seriesCards: SeriesCard[] = [
+const marketSeriesCards: SeriesCard[] = [
   {
     name: "S&P 500",
+    value: "5,148.42",
+    change: "+0.72%",
+    points: [38, 42, 41, 46, 44, 50, 52],
+    tone: "up",
+    type: "stock",
+  },
+  {
+    name: "AAPL",
+    value: "4.21%",
+    change: "-0.08%",
+    points: [55, 54, 52, 51, 49, 48, 47],
+    tone: "down",
+    type: "macro",
+  },
+  {
+    name: "NVDA",
+    value: "3.1%",
+    change: "-0.20%",
+    points: [60, 58, 57, 55, 54, 52, 50],
+    tone: "down",
+    type: "macro",
+  },
+  {
+    name: "TSLA",
+    value: "3.9%",
+    change: "+0.10%",
+    points: [42, 41, 43, 45, 44, 46, 47],
+    tone: "up",
+    type: "macro",
+  },
+];
+
+const macroSeriesCards: SeriesCard[] = [
+  {
+    name: "Real GDP",
     value: "5,148.42",
     change: "+0.72%",
     points: [38, 42, 41, 46, 44, 50, 52],
@@ -66,36 +113,32 @@ const seriesCards: SeriesCard[] = [
   },
 ];
 
-const gdpBars = [
-  { q: "Q1", v: 2.2 },
-  { q: "Q2", v: 1.9 },
-  { q: "Q3", v: 2.4 },
-  { q: "Q4", v: 2.1 },
-  { q: "Q1*", v: 1.7 },
-];
-
 const timelineEvents: TimelineEvent[] = [
   {
     date: "2026-02-27",
     title: "Fed signals caution on rate cuts",
+    text: "Policymakers highlighted sticky services inflation and signaled they need more data before easing policy.",
     source: "FOMC Minutes",
     impact: "High",
   },
   {
     date: "2026-02-21",
     title: "Core inflation prints below estimate",
+    text: "Core CPI slowed month-over-month as goods disinflation continued, reducing near-term tightening risk.",
     source: "BLS Release",
     impact: "High",
   },
   {
     date: "2026-02-15",
     title: "Manufacturing PMI re-enters expansion",
+    text: "PMI moved back above 50 on stronger new orders, suggesting a rebound in industrial momentum.",
     source: "ISM",
     impact: "Medium",
   },
   {
     date: "2026-02-08",
-    title: "Labor market remains resilient",
+    title: "Services inflation shows renewed pressure",
+    text: "Shelter and wage-sensitive categories remained firm, increasing risk that disinflation progress stalls.",
     source: "NFP Report",
     impact: "Medium",
   },
@@ -107,7 +150,7 @@ const heatCells: HeatCell[] = [
   { topic: "Energy Shock", score: 66 },
   { topic: "Fiscal Risk", score: 54 },
   { topic: "China Demand", score: 49 },
-  { topic: "Supply Chain", score: 44 },
+  { topic: "Supply Chain", score: 0 },
   { topic: "Bank Stress", score: 61 },
   { topic: "Housing", score: 47 },
   { topic: "USD Strength", score: 52 },
@@ -158,111 +201,198 @@ const alertRules: AlertRule[] = [
 ];
 
 function Sparkline({ points, tone }: { points: number[]; tone: "up" | "down" }) {
-  const width = 220;
-  const height = 72;
+  const width = 360;
+  const height = 170;
+  const padLeft = 16;
+  const padRight = 16;
+  const padTop = 14;
+  const padBottom = 28;
+  const plotWidth = width - padLeft - padRight;
+  const plotHeight = height - padTop - padBottom;
   const max = Math.max(...points);
   const min = Math.min(...points);
   const spread = Math.max(max - min, 1);
+  const mid = min + spread / 2;
 
   const path = points
     .map((point, i) => {
-      const x = (i / (points.length - 1)) * width;
-      const y = height - ((point - min) / spread) * height;
+      const x =
+        padLeft +
+        (points.length > 1 ? (i / (points.length - 1)) * plotWidth : plotWidth / 2);
+      const y = padTop + (1 - (point - min) / spread) * plotHeight;
       return `${i === 0 ? "M" : "L"} ${x} ${y}`;
     })
     .join(" ");
 
-  const stroke = tone === "up" ? "#2DD4BF" : "#FB7185";
+  const yTicks = [
+    { value: max, y: padTop },
+    { value: mid, y: padTop + plotHeight / 2 },
+    { value: min, y: padTop + plotHeight },
+  ];
+
+  const xTicks = [
+    { label: "T1", x: padLeft },
+    { label: `T${Math.ceil(points.length / 2)}`, x: padLeft + plotWidth / 2 },
+    { label: `T${points.length}`, x: padLeft + plotWidth },
+  ];
 
   return (
     <svg
-      className="h-[72px] w-full rounded bg-[#09111d]"
+      className={`${styles.sparkline} ${tone === "up" ? styles.sparklineUp : styles.sparklineDown}`}
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
       aria-hidden
     >
-      <path d={path} fill="none" stroke={stroke} strokeWidth="2.5" />
+      {yTicks.map((tick) => (
+        <line
+          key={`grid-${tick.value}-${tick.y}`}
+          className={styles.sparklineGrid}
+          x1={padLeft}
+          y1={tick.y}
+          x2={width - padRight}
+          y2={tick.y}
+        />
+      ))}
+      <line
+        className={styles.sparklineAxis}
+        x1={padLeft}
+        y1={padTop}
+        x2={padLeft}
+        y2={height - padBottom}
+      />
+      <line
+        className={styles.sparklineAxis}
+        x1={padLeft}
+        y1={height - padBottom}
+        x2={width - padRight}
+        y2={height - padBottom}
+      />
+
+      <path className={styles.sparklinePath} d={path} />
+
+      {yTicks.map((tick) => (
+        <g key={`ytick-${tick.value}-${tick.y}`}>
+          <line
+            className={styles.sparklineTick}
+            x1={padLeft - 3}
+            y1={tick.y}
+            x2={padLeft}
+            y2={tick.y}
+          />
+          <text className={styles.sparklineLabel} x={padLeft - 6} y={tick.y + 3} textAnchor="end">
+            {tick.value.toFixed(0)}
+          </text>
+        </g>
+      ))}
+
+      {xTicks.map((tick) => (
+        <g key={`xtick-${tick.label}-${tick.x}`}>
+          <line
+            className={styles.sparklineTick}
+            x1={tick.x}
+            y1={height - padBottom}
+            x2={tick.x}
+            y2={height - padBottom + 3}
+          />
+          <text
+            className={styles.sparklineLabel}
+            x={tick.x}
+            y={height - 2}
+            textAnchor="middle"
+          >
+            {tick.label}
+          </text>
+        </g>
+      ))}
     </svg>
   );
 }
 
-function heatTone(score: number) {
-  if (score >= 75) return "bg-red-500/30 text-red-200 border-red-300/30";
-  if (score >= 60) return "bg-orange-400/25 text-orange-100 border-orange-300/35";
-  if (score >= 45) return "bg-yellow-300/20 text-yellow-100 border-yellow-200/30";
-  return "bg-cyan-500/20 text-cyan-100 border-cyan-300/30";
+function heatToneStyle(score: number): CSSProperties {
+  const clamped = Math.max(0, Math.min(100, score));
+  const hue = 120 - (clamped / 100) * 120;
+  const darkFill = `hsl(${hue}, 62%, 23%)`;
+  const border = `hsl(${hue}, 68%, 34%)`;
+
+  return {
+    backgroundColor: darkFill,
+    borderColor: border,
+  };
+}
+
+function alertToneClass(status: AlertRule["status"]) {
+  return status === "Breached" ? styles.alertBreached : styles.alertWatching;
+}
+
+function impactToneClass(impact: TimelineEvent["impact"]) {
+  if (impact === "High") return styles.impactHigh;
+  if (impact === "Medium") return styles.impactMedium;
+  return styles.impactLow;
 }
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-[#050b14] text-slate-100">
-      <header className="border-b border-cyan-300/20 bg-[#081224]">
-        <div className="mx-auto flex w-full max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
-          <p className="text-sm font-semibold tracking-[0.22em] text-cyan-300">
-            MACRO COMMAND
-          </p>
-          <div className="h-4 w-px bg-cyan-400/40" />
-          <p className="text-xs text-slate-300">Terminal-style Macro Tracker MVP</p>
-          <span className="ml-auto rounded border border-cyan-300/30 bg-cyan-900/40 px-2 py-1 text-[11px] text-cyan-100">
-            Live mode (mock)
-          </span>
+    <div className={styles.page}>
+      <header className={styles.header}>
+        <div className={styles.headerInner}>
+          <p className={styles.brand}>DAMMIT FINANCE MANAGER</p>
         </div>
       </header>
 
-      <main className="mx-auto grid w-full max-w-[1600px] grid-cols-1 gap-4 p-4 sm:p-6 lg:grid-cols-[230px_1fr]">
-        <aside className="rounded-lg border border-slate-700/70 bg-[#0b1524] p-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-            Modules
-          </p>
-          <ul className="mt-3 space-y-2 text-sm text-slate-200">
-            <li className="rounded border border-amber-300/30 bg-amber-300/10 px-3 py-2">
-              Market & Macro
+      <main className={styles.mainGrid}>
+        <aside className={styles.sidebar}>
+          <p className={styles.sidebarTitle}>Features</p>
+          <ul className={styles.moduleList}>
+            <li className={styles.moduleItem}>
+              <ChartCandlestick className={styles.moduleIcon} aria-hidden />
+              <span>Market</span>
             </li>
-            <li className="rounded border border-slate-600 px-3 py-2">Timelines</li>
-            <li className="rounded border border-slate-600 px-3 py-2">Theme Heat</li>
-            <li className="rounded border border-slate-600 px-3 py-2">AI Assistant</li>
-            <li className="rounded border border-slate-600 px-3 py-2">Alerts</li>
+            <li className={styles.moduleItem}>
+              <Earth className={styles.moduleIcon} aria-hidden />
+              <span>Macro Indicators</span>
+            </li>
+            <li className={styles.moduleItem}>
+              <Newspaper className={styles.moduleIcon} aria-hidden />
+              <span>Timelines</span>
+            </li>
+            <li className={styles.moduleItem}>
+              <Thermometer className={styles.moduleIcon} aria-hidden />
+              <span>Theme Heat</span>
+            </li>
+            <li className={styles.moduleItem}>
+              <Bot className={styles.moduleIcon} aria-hidden />
+              <span>AI Assistant</span>
+            </li>
+            <li className={styles.moduleItem}>
+              <Bell className={styles.moduleIcon} aria-hidden />
+              <span>Alerts</span>
+            </li>
           </ul>
-          <div className="mt-4 rounded border border-cyan-300/25 bg-cyan-950/40 p-3 text-xs text-cyan-100">
-            Annotated MVP
-            <p className="mt-1 text-cyan-50/90">
-              Focused on frontend look/flow. Data calls are represented as mock
-              backend bindings.
-            </p>
-          </div>
         </aside>
 
-        <section className="grid grid-cols-1 gap-4 xl:grid-cols-[2fr_1fr]">
-          <div className="space-y-4">
-            <section className="rounded-lg border border-slate-700/70 bg-[#0b1524] p-4">
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <h2 className="text-sm font-semibold tracking-wide text-amber-300">
-                  FEATURE 1: MARKET + MACRO GRAPHS
-                </h2>
-                <span className="rounded border border-amber-200/35 bg-amber-200/10 px-2 py-1 text-[11px] text-amber-100">
-                  Annotation: /api/series?tickers=SPX,CPI,GDP,UNRATE
+        <section className={styles.contentGrid}>
+          <div className={styles.stack}>
+            <section className={styles.panel}>
+              <div className={styles.panelHead}>
+                <h2 className={styles.featureTitle}>Today&apos;s Market</h2>
+                <span className={styles.annotation}>
+                  TODO: Connect backend API to display real data, add graphs page with more detailed information for graphs
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                {seriesCards.map((card) => (
-                  <article
-                    key={card.name}
-                    className="rounded border border-slate-600/70 bg-[#0a1320] p-3"
-                  >
-                    <div className="mb-2 flex items-end justify-between">
+              <div className={styles.seriesGrid}>
+                {marketSeriesCards.map((card) => (
+                  <article key={card.name} className={styles.seriesCard}>
+                    <div className={styles.seriesTop}>
                       <div>
-                        <p className="text-xs uppercase tracking-wider text-slate-400">
-                          {card.type}
-                        </p>
-                        <p className="text-sm font-semibold text-slate-50">{card.name}</p>
+                        <p className={styles.seriesName}>{card.name}</p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-lg font-semibold text-slate-50">{card.value}</p>
+                      <div className={styles.seriesMetric}>
+                        <p className={styles.seriesValue}>{card.value}</p>
                         <p
-                          className={
-                            card.tone === "up" ? "text-xs text-teal-300" : "text-xs text-rose-300"
-                          }
+                          className={`${styles.seriesChange} ${
+                            card.tone === "up" ? styles.changeUp : styles.changeDown
+                          }`}
                         >
                           {card.change}
                         </p>
@@ -272,177 +402,174 @@ export default function Home() {
                   </article>
                 ))}
               </div>
-
-              <article className="mt-3 rounded border border-slate-600/70 bg-[#0a1320] p-3">
-                <div className="mb-2 flex items-center justify-between">
-                  <p className="text-sm font-semibold text-slate-100">GDP Growth (Quarterly)</p>
-                  <p className="text-xs text-slate-400">MVP bar visualization</p>
-                </div>
-                <div className="flex h-32 items-end gap-2">
-                  {gdpBars.map((bar) => (
-                    <div key={bar.q} className="flex flex-1 flex-col items-center gap-2">
-                      <div
-                        className="w-full rounded-t bg-cyan-400/70"
-                        style={{ height: `${bar.v * 30}px` }}
-                      />
-                      <p className="text-[11px] text-slate-300">{bar.q}</p>
-                    </div>
-                  ))}
-                </div>
-              </article>
             </section>
 
-            <section className="rounded-lg border border-slate-700/70 bg-[#0b1524] p-4">
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <h2 className="text-sm font-semibold tracking-wide text-amber-300">
-                  FEATURE 2: QUERYABLE TIMELINE (DB-BACKED)
-                </h2>
-                <span className="rounded border border-amber-200/35 bg-amber-200/10 px-2 py-1 text-[11px] text-amber-100">
-                  Annotation: GET /api/timeline?topic=inflation - from database
+            <section className={styles.panel}>
+              <div className={styles.panelHead}>
+                <h2 className={styles.featureTitle}>Today&apos;s Macroeconomic Indicators</h2>
+                <span className={styles.annotation}>
+                  TODO: Connect backend API to display real data, add graphs page with more detailed information for graphs
                 </span>
               </div>
 
-              <div className="mb-4 flex flex-col gap-2 sm:flex-row">
+              <div className={styles.seriesGrid}>
+                {macroSeriesCards.map((card) => (
+                  <article key={card.name} className={styles.seriesCard}>
+                    <div className={styles.seriesTop}>
+                      <div>
+                        <p className={styles.seriesName}>{card.name}</p>
+                      </div>
+                      <div className={styles.seriesMetric}>
+                        <p className={styles.seriesValue}>{card.value}</p>
+                        <p
+                          className={`${styles.seriesChange} ${
+                            card.tone === "up" ? styles.changeUp : styles.changeDown
+                          }`}
+                        >
+                          {card.change}
+                        </p>
+                      </div>
+                    </div>
+                    <Sparkline points={card.points} tone={card.tone} />
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className={styles.panel}>
+              <div className={styles.panelHead}>
+                <h2 className={styles.featureTitle}>
+                  Timelines
+                </h2>
+                <span className={styles.annotation}>
+                  TODO: Implement timeline frontend/backend logic (High, medium, low = importance score)
+                </span>
+              </div>
+
+              <div className={styles.queryRow}>
                 <input
                   readOnly
                   value="inflation"
                   aria-label="Timeline topic query"
-                  className="w-full rounded border border-slate-500 bg-[#07101b] px-3 py-2 text-sm text-slate-100 outline-none"
+                  className={styles.queryInput}
                 />
-                <button
-                  type="button"
-                  className="rounded border border-cyan-300/40 bg-cyan-500/15 px-4 py-2 text-sm text-cyan-100"
-                >
+                <button type="button" className={styles.queryButton}>
                   Query Timeline
                 </button>
               </div>
 
-              <div className="relative space-y-3 pl-4 before:absolute before:left-[6px] before:top-1 before:h-[95%] before:w-px before:bg-slate-500/80">
+              <div className={styles.timelineList}>
                 {timelineEvents.map((event) => (
-                  <article
-                    key={`${event.date}-${event.title}`}
-                    className="relative rounded border border-slate-600/70 bg-[#0a1320] p-3"
-                  >
-                    <span className="absolute -left-[15px] top-4 h-3 w-3 rounded-full border border-cyan-300/40 bg-cyan-400/70" />
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-xs text-slate-400">{event.date}</p>
-                      <span className="rounded bg-slate-700/70 px-2 py-0.5 text-[10px] uppercase tracking-wider text-slate-200">
+                  <article key={`${event.date}-${event.title}`} className={styles.timelineEvent}>
+                    <span className={styles.timelineDot} />
+                    <div className={styles.timelineMeta}>
+                      <p className={styles.timelineDate}>{event.date}</p>
+                      <span className={`${styles.impactTag} ${impactToneClass(event.impact)}`}>
                         {event.impact}
                       </span>
                     </div>
-                    <p className="mt-1 text-sm font-medium text-slate-50">{event.title}</p>
-                    <p className="text-xs text-slate-300">Source: {event.source}</p>
+                    <p className={styles.timelineTitle}>{event.title}</p>
+                    <p className={styles.timelineText}>{event.text}</p>
+                    <p className={styles.timelineSource}>Source: {event.source}</p>
                   </article>
                 ))}
               </div>
             </section>
           </div>
 
-          <div className="space-y-4">
-            <section className="rounded-lg border border-slate-700/70 bg-[#0b1524] p-4">
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <h2 className="text-sm font-semibold tracking-wide text-amber-300">
-                  FEATURE 3: TRENDING TOPIC HEAT MAP
+          <div className={styles.stack}>
+            <section className={styles.panel}>
+              <div className={styles.panelHead}>
+                <h2 className={styles.featureTitle}>
+                  Trending Themes
                 </h2>
-                <span className="rounded border border-amber-200/35 bg-amber-200/10 px-2 py-1 text-[11px] text-amber-100">
-                  Annotation: GET /api/heatmap - backend ranked topics
+                <span className={styles.annotation}>
+                  TODO: Retrieve highest heat score themes from database
                 </span>
               </div>
 
-              <div className="grid grid-cols-3 gap-2">
+              <div className={styles.heatGrid}>
                 {heatCells.map((cell) => (
                   <div
                     key={cell.topic}
-                    className={`rounded border p-2 ${heatTone(cell.score)}`}
+                    className={styles.heatCell}
+                    style={heatToneStyle(cell.score)}
                   >
-                    <p className="text-xs font-medium">{cell.topic}</p>
-                    <p className="text-[11px]">Heat {cell.score}</p>
+                    <p className={styles.heatTopic}>{cell.topic}</p>
+                    <p className={styles.heatScore}>{cell.score}</p>
                   </div>
                 ))}
               </div>
             </section>
 
-            <section className="rounded-lg border border-slate-700/70 bg-[#0b1524] p-4">
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <h2 className="text-sm font-semibold tracking-wide text-amber-300">
+            <section className={styles.panel}>
+              <div className={styles.panelHead}>
+                <h2 className={styles.featureTitle}>
                   FEATURE 4: CHATBOT WITH REASONING + SOURCES
                 </h2>
-                <span className="rounded border border-amber-200/35 bg-amber-200/10 px-2 py-1 text-[11px] text-amber-100">
+                <span className={styles.annotation}>
                   Annotation: POST /api/chat and POST /api/chat/save
                 </span>
               </div>
 
-              <div className="space-y-2 rounded border border-slate-600/70 bg-[#0a1320] p-3">
+              <div className={styles.chatThread}>
                 {chatMessages.map((msg, i) => (
                   <div
                     key={`${msg.role}-${i}`}
-                    className={`rounded p-2 text-sm ${
-                      msg.role === "user"
-                        ? "bg-slate-700/80 text-slate-100"
-                        : "bg-cyan-900/45 text-cyan-50"
+                    className={`${styles.chatBubble} ${
+                      msg.role === "user" ? styles.chatUser : styles.chatAssistant
                     }`}
                   >
-                    <p className="mb-1 text-[11px] uppercase tracking-wide text-slate-300">
-                      {msg.role}
-                    </p>
-                    <p>{msg.text}</p>
+                    <p className={styles.chatRole}>{msg.role}</p>
+                    <p className={styles.chatText}>{msg.text}</p>
                   </div>
                 ))}
               </div>
 
-              <div className="mt-3 rounded border border-slate-600/70 bg-[#0a1320] p-3">
-                <p className="text-xs font-semibold uppercase tracking-wider text-slate-300">
+              <div className={styles.chatDetail}>
+                <p className={styles.subHeading}>
                   Reasoning Trace (UI mock)
                 </p>
-                <ul className="mt-2 space-y-1 text-xs text-slate-200">
+                <ul className={styles.smallList}>
                   {chatReasoning.map((step) => (
                     <li key={step}>{step}</li>
                   ))}
                 </ul>
-                <p className="mt-3 text-xs font-semibold uppercase tracking-wider text-slate-300">
+                <p className={styles.subHeading}>
                   Sources Cited
                 </p>
-                <ul className="mt-1 space-y-1 text-xs text-cyan-100">
+                <ul className={styles.sourceList}>
                   {chatSources.map((source) => (
                     <li key={source}>- {source}</li>
                   ))}
                 </ul>
-                <p className="mt-3 text-[11px] text-teal-300">
+                <p className={styles.savedStatus}>
                   Conversation status: Saved to backend session #CH-204
                 </p>
               </div>
             </section>
 
-            <section className="rounded-lg border border-slate-700/70 bg-[#0b1524] p-4">
-              <div className="mb-3 flex flex-wrap items-center gap-2">
-                <h2 className="text-sm font-semibold tracking-wide text-amber-300">
+            <section className={styles.panel}>
+              <div className={styles.panelHead}>
+                <h2 className={styles.featureTitle}>
                   FEATURE 5: NOTIFICATION & ALERT SERVICE
                 </h2>
-                <span className="rounded border border-amber-200/35 bg-amber-200/10 px-2 py-1 text-[11px] text-amber-100">
+                <span className={styles.annotation}>
                   Annotation: stream from /api/alerts (risk + heat thresholds)
                 </span>
               </div>
 
-              <div className="space-y-2">
+              <div className={styles.alertList}>
                 {alertRules.map((rule) => (
-                  <article
-                    key={rule.name}
-                    className="rounded border border-slate-600/70 bg-[#0a1320] p-3"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-slate-50">{rule.name}</p>
-                      <span
-                        className={`rounded px-2 py-0.5 text-[11px] ${
-                          rule.status === "Breached"
-                            ? "bg-rose-500/25 text-rose-100"
-                            : "bg-cyan-500/25 text-cyan-100"
-                        }`}
-                      >
+                  <article key={rule.name} className={styles.alertCard}>
+                    <div className={styles.alertTop}>
+                      <p className={styles.alertName}>{rule.name}</p>
+                      <span className={`${styles.alertBadge} ${alertToneClass(rule.status)}`}>
                         {rule.status}
                       </span>
                     </div>
-                    <p className="mt-1 text-xs text-slate-300">Trigger: {rule.threshold}</p>
-                    <p className="text-xs text-slate-400">{rule.detail}</p>
+                    <p className={styles.alertMeta}>Trigger: {rule.threshold}</p>
+                    <p className={styles.alertDetail}>{rule.detail}</p>
                   </article>
                 ))}
               </div>
