@@ -317,7 +317,7 @@ def test_fred() -> None:
 from scrapy.crawler import CrawlerProcess
 from scrapy.settings import SETTINGS_PRIORITIES
 from scrapy.utils.project import get_project_settings
-from ..webcrawlerlib.spiders.gdelt_spider import GdeltSpider
+from webcrawlerlib.spiders.gdelt_spider import GdeltSpider
 
 
 # Main gdelt webcrawler API endpoint
@@ -351,7 +351,7 @@ def run_gdelt_spider(
 
     query = f"{query} sourcelang:{language}"
 
-    os.environ.setdefault("SCRAPY_SETTINGS_MODULE", "backend.webcrawlerlib.settings")
+    os.environ.setdefault("SCRAPY_SETTINGS_MODULE", "webcrawlerlib.settings")
     settings = get_project_settings()
     settings.set("LOG_LEVEL", "WARNING", priority=SETTINGS_PRIORITIES["cmdline"])
     settings.set("LOGSTATS_INTERVAL", 0, priority=SETTINGS_PRIORITIES["cmdline"])
@@ -362,7 +362,7 @@ def run_gdelt_spider(
     # debug
     if output:
         pipelines = dict(settings.getdict("ITEM_PIPELINES"))
-        pipelines.pop("backend.webcrawlerlib.pipelines.RawPayloadStoragePipeline", None)
+        pipelines.pop("webcrawlerlib.pipelines.RawPayloadStoragePipeline", None)
         settings.set("ITEM_PIPELINES", pipelines) # disable pipeline
         settings.set(
             "FEEDS",

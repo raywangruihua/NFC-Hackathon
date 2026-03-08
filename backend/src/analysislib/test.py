@@ -1,9 +1,10 @@
 from datetime import datetime
-from macro_themes import group_events_into_themes
-from heat_score import calculate_theme_heat
-from market_impact import generate_market_impact
-from portfolio_analysis import analyze_portfolio_risk
 import uuid
+
+from .macro_themes import group_events_into_themes
+from .heat_score import calculate_theme_heat
+from .market_impact import generate_market_impact
+from .portfolio_analysis import analyze_portfolio_risk
 
 # -------------------------
 # Placeholder user portfolio

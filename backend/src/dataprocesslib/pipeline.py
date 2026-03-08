@@ -23,9 +23,9 @@ import uuid
 import json
 from datetime import datetime, timezone
 
-from processors.sentiments import predict_one
-from processors.extractor import extract_entities
-from processors.importance import score_importance
+from .processors.sentiments import predict_one
+from .processors.extractor import extract_entities
+from .processors.importance import score_importance
 
 
 # ── Region mapping ────────────────────────────────────────────────────────────

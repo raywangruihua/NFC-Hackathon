@@ -1,8 +1,21 @@
 import json
-from db import supabase, ingest_raw_article, insert_event, insert_memory, insert_theme, search_memory, get_full_article, Event, Theme, get_unprocessed, mark_processed
-from embeddings import embed_document, embed_query
 import uuid
 from datetime import datetime, timezone
+
+from .db import (
+    Event,
+    Theme,
+    get_full_article,
+    get_unprocessed,
+    ingest_raw_article,
+    insert_event,
+    insert_memory,
+    insert_theme,
+    mark_processed,
+    search_memory,
+    supabase,
+)
+from .embeddings import embed_document, embed_query
 
 # ── 0. Cleanup previous test data ────────────────────────────────────────────
 supabase.table("event_theme_map").delete().neq(

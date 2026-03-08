@@ -2,7 +2,7 @@ import json
 
 from itemadapter import ItemAdapter
 from scrapy.exceptions import DropItem
-from ..databaselib.db import ingest_raw_article
+from databaselib.db import ingest_raw_article
 
 
 class RawPayloadStoragePipeline:

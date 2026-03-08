@@ -1,7 +1,7 @@
 import spacy
 import re
 
-from processors import ticker_loader
+from . import ticker_loader
 
 nlp = spacy.load("en_core_web_trf")
 
