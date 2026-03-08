@@ -1,4 +1,6 @@
-import type { CSSProperties } from "react";
+"use client";
+
+import { useEffect, useState, type CSSProperties, type ChangeEvent } from "react";
 import {
   Bell,
   Bot,
@@ -14,8 +16,49 @@ type SeriesCard = {
   value: string;
   change: string;
   points: number[];
+  xLabels?: string[];
   tone: "up" | "down";
   type: "stock" | "macro";
+};
+
+type MacroSeriesCard = SeriesCard & {
+  indicatorKey: string;
+};
+
+type FredCategoryOption = {
+  key: string;
+  label: string;
+};
+
+type FredIndicatorOption = {
+  key: string;
+  label: string;
+  series_id: string;
+};
+
+type FredCategoriesResponse = {
+  country: string;
+  categories: FredCategoryOption[];
+};
+
+type FredIndicatorsResponse = {
+  category: string;
+  indicators: FredIndicatorOption[];
+};
+
+type FredSeriesResponse = {
+  category: string | null;
+  indicator: string;
+  indicator_label: string;
+  series_id: string | null;
+  observations: Array<{ date: string; value: number }>;
+  points: number[];
+  latest: { date: string; value: number } | null;
+  previous: { date: string; value: number } | null;
+  change: {
+    absolute: number;
+    percent: number;
+  };
 };
 
 type TimelineEvent = {
@@ -43,6 +86,11 @@ type AlertRule = {
   detail: string;
 };
 
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_BACKEND_BASE_URL
+const MAX_MACRO_GRAPHS = 8;
+
+// Place holder market data
 const marketSeriesCards: SeriesCard[] = [
   {
     name: "S&P 500",
@@ -78,41 +126,7 @@ const marketSeriesCards: SeriesCard[] = [
   },
 ];
 
-const macroSeriesCards: SeriesCard[] = [
-  {
-    name: "Real GDP",
-    value: "5,148.42",
-    change: "+0.72%",
-    points: [38, 42, 41, 46, 44, 50, 52],
-    tone: "up",
-    type: "stock",
-  },
-  {
-    name: "US 10Y Yield",
-    value: "4.21%",
-    change: "-0.08%",
-    points: [55, 54, 52, 51, 49, 48, 47],
-    tone: "down",
-    type: "macro",
-  },
-  {
-    name: "CPI YoY",
-    value: "3.1%",
-    change: "-0.20%",
-    points: [60, 58, 57, 55, 54, 52, 50],
-    tone: "down",
-    type: "macro",
-  },
-  {
-    name: "Unemployment",
-    value: "3.9%",
-    change: "+0.10%",
-    points: [42, 41, 43, 45, 44, 46, 47],
-    tone: "up",
-    type: "macro",
-  },
-];
-
+// Placeholder timeline data
 const timelineEvents: TimelineEvent[] = [
   {
     date: "2026-02-27",
@@ -144,6 +158,7 @@ const timelineEvents: TimelineEvent[] = [
   },
 ];
 
+// Placeholder theme heat data
 const heatCells: HeatCell[] = [
   { topic: "Rate Cuts", score: 88 },
   { topic: "AI Capex", score: 73 },
@@ -156,6 +171,7 @@ const heatCells: HeatCell[] = [
   { topic: "USD Strength", score: 52 },
 ];
 
+// Placeholder chatbot example 
 const chatMessages: ChatMessage[] = [
   {
     role: "user",
@@ -167,18 +183,21 @@ const chatMessages: ChatMessage[] = [
   },
 ];
 
+// Placeholder chain of thought reasoning by chatbot
 const chatReasoning = [
   "Step 1: Pull latest yield curve and inflation surprise data.",
   "Step 2: Compare factor exposure for mega-cap tech vs broad market.",
   "Step 3: Rank themes by impact score and confidence.",
 ];
 
+// Placeholder sources cited by chatbot when thinking
 const chatSources = [
   "FRED: 10Y Real Yield",
   "BLS CPI Release",
   "SEC Filings: Selected tech names",
 ];
 
+// Placeholder alerts
 const alertRules: AlertRule[] = [
   {
     name: "Portfolio VaR",
@@ -200,10 +219,24 @@ const alertRules: AlertRule[] = [
   },
 ];
 
-function Sparkline({ points, tone }: { points: number[]; tone: "up" | "down" }) {
+function formatXAxisDateLabel(rawDate: string) {
+  const parsed = new Date(`${rawDate}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return rawDate;
+  return Intl.DateTimeFormat("en-US", { month: "short", year: "2-digit" }).format(parsed);
+}
+
+function Sparkline({
+  points,
+  tone,
+  xLabels,
+}: {
+  points: number[];
+  tone: "up" | "down";
+  xLabels?: string[];
+}) {
   const width = 360;
   const height = 170;
-  const padLeft = 16;
+  const padLeft = 58;
   const padRight = 16;
   const padTop = 14;
   const padBottom = 28;
@@ -230,11 +263,30 @@ function Sparkline({ points, tone }: { points: number[]; tone: "up" | "down" }) 
     { value: min, y: padTop + plotHeight },
   ];
 
+  const hasDateLabels = Array.isArray(xLabels) && xLabels.length === points.length;
+  const midpointIndex = Math.floor((points.length - 1) / 2);
   const xTicks = [
-    { label: "T1", x: padLeft },
-    { label: `T${Math.ceil(points.length / 2)}`, x: padLeft + plotWidth / 2 },
-    { label: `T${points.length}`, x: padLeft + plotWidth },
+    {
+      label: hasDateLabels ? formatXAxisDateLabel(xLabels[0]) : "T1",
+      x: padLeft,
+    },
+    {
+      label: hasDateLabels
+        ? formatXAxisDateLabel(xLabels[midpointIndex])
+        : `T${Math.ceil(points.length / 2)}`,
+      x: padLeft + plotWidth / 2,
+    },
+    {
+      label: hasDateLabels ? formatXAxisDateLabel(xLabels[points.length - 1]) : `T${points.length}`,
+      x: padLeft + plotWidth,
+    },
   ];
+
+  const formatAxisValue = (value: number) =>
+    Intl.NumberFormat("en-US", {
+      notation: "compact",
+      maximumFractionDigits: 1,
+    }).format(value);
 
   return (
     <svg
@@ -280,7 +332,7 @@ function Sparkline({ points, tone }: { points: number[]; tone: "up" | "down" }) 
             y2={tick.y}
           />
           <text className={styles.sparklineLabel} x={padLeft - 6} y={tick.y + 3} textAnchor="end">
-            {tick.value.toFixed(0)}
+            {formatAxisValue(tick.value)}
           </text>
         </g>
       ))}
@@ -308,7 +360,11 @@ function Sparkline({ points, tone }: { points: number[]; tone: "up" | "down" }) 
   );
 }
 
+
 function heatToneStyle(score: number): CSSProperties {
+  /**
+   * Generate heat tone colour for heat map based on heat score.
+   */
   const clamped = Math.max(0, Math.min(100, score));
   const hue = 120 - (clamped / 100) * 120;
   const darkFill = `hsl(${hue}, 62%, 23%)`;
@@ -330,7 +386,231 @@ function impactToneClass(impact: TimelineEvent["impact"]) {
   return styles.impactLow;
 }
 
+function toLabel(value: string) {
+  const tokenMap: Record<string, string> = {
+    fx: "FX",
+    usd: "USD",
+    eur: "EUR",
+    jpy: "JPY",
+    gdp: "GDP",
+    cpi: "CPI",
+    pce: "PCE",
+    ppi: "PPI",
+    pmi: "PMI",
+    fed: "Fed",
+    sofr: "SOFR",
+    ust: "UST",
+    ig: "IG",
+    hy: "HY",
+    oas: "OAS",
+    ted: "TED",
+    nfci: "NFCI",
+    stlfsi: "STLFSI",
+    m2: "M2",
+    u6: "U6",
+    wti: "WTI",
+    yoy: "YoY",
+    mom: "MoM",
+  };
+
+  return value
+    .split("_")
+    .map((token) => {
+      const lowered = token.toLowerCase();
+      if (tokenMap[lowered]) return tokenMap[lowered];
+
+      if (/^\d+[a-z]+$/i.test(token)) {
+        const prefix = token.replace(/[A-Za-z]/g, "");
+        const suffix = token.replace(/\d/g, "").toUpperCase();
+        return `${prefix}${suffix}`;
+      }
+
+      return lowered.charAt(0).toUpperCase() + lowered.slice(1);
+    })
+    .join(" ");
+}
+
+function formatMetricValue(value: number | null) {
+  if (value === null || Number.isNaN(value)) return "N/A";
+  if (Math.abs(value) >= 1000) {
+    return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  }
+  return value.toFixed(2);
+}
+
+function formatPercentChange(value: number) {
+  const sign = value >= 0 ? "+" : "";
+  return `${sign}${value.toFixed(2)}%`;
+}
+
+function normalizeSeries(observations: Array<{ date: string; value: number }>) {
+  const validRows = observations.filter((row) => Number.isFinite(row.value));
+  if (validRows.length > 1) {
+    return {
+      points: validRows.map((row) => row.value),
+      xLabels: validRows.map((row) => row.date),
+    };
+  }
+  if (validRows.length === 1) {
+    return {
+      points: [validRows[0].value, validRows[0].value],
+      xLabels: [validRows[0].date, validRows[0].date],
+    };
+  }
+  return {
+    points: [0, 0],
+    xLabels: ["N/A", "N/A"],
+  };
+}
+
 export default function Home() {
+  const [selectedCountry, setSelectedCountry] = useState("USA");
+  const [categories, setCategories] = useState<FredCategoryOption[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [indicators, setIndicators] = useState<FredIndicatorOption[]>([]);
+  const [selectedIndicator, setSelectedIndicator] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [macroCards, setMacroCards] = useState<MacroSeriesCard[]>([]);
+  const [macroLoading, setMacroLoading] = useState(false);
+  const [macroError, setMacroError] = useState<string | null>(null);
+
+  // Country selection drop down menu
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadCategories() {
+      setMacroLoading(true);
+      setMacroError(null);
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/fred/categories?country=${encodeURIComponent(
+            selectedCountry.toLowerCase()
+          )}`,
+          { signal: controller.signal }
+        );
+        if (!response.ok) {
+          throw new Error("Failed to load categories.");
+        }
+
+        const data = (await response.json()) as FredCategoriesResponse;
+        const nextCategories = data.categories ?? [];
+        setCategories(nextCategories);
+        setSelectedCategory((current) => {
+          if (nextCategories.some((option) => option.key === current)) {
+            return current;
+          }
+          return nextCategories[0]?.key ?? "";
+        });
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setCategories([]);
+        setSelectedCategory("");
+        setMacroError("Unable to load FRED categories.");
+      } finally {
+        setMacroLoading(false);
+      }
+    }
+
+    void loadCategories();
+    return () => controller.abort();
+  }, [selectedCountry]);
+
+  // Category selection drop down menu
+  useEffect(() => {
+    if (!selectedCategory) {
+      setIndicators([]);
+      setSelectedIndicator("");
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadIndicators() {
+      setMacroLoading(true);
+      setMacroError(null);
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/fred/indicators?category=${encodeURIComponent(selectedCategory)}`,
+          { signal: controller.signal }
+        );
+        if (!response.ok) {
+          throw new Error("Failed to load indicators.");
+        }
+
+        const data = (await response.json()) as FredIndicatorsResponse;
+        setIndicators(data.indicators ?? []);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setIndicators([]);
+        setMacroError("Unable to load indicators for this category.");
+      } finally {
+        setMacroLoading(false);
+      }
+    }
+
+    void loadIndicators();
+    return () => controller.abort();
+  }, [selectedCategory]);
+
+  // Indicator selection drop down menu
+  const handleIndicatorSelect = (event: ChangeEvent<HTMLSelectElement>) => {
+    setSelectedIndicator(event.target.value);
+  };
+
+  const handleSearchClick = async () => {
+    if (!selectedIndicator || !selectedCategory) return;
+    if (startDate && endDate && startDate > endDate) {
+      setMacroError("Start date must be earlier than or equal to end date.");
+      return;
+    }
+
+    setMacroLoading(true);
+    setMacroError(null);
+
+    try {
+      const query = new URLSearchParams({
+        category: selectedCategory,
+        indicator: selectedIndicator,
+        limit: "120",
+      });
+      if (startDate) query.set("start_date", startDate);
+      if (endDate) query.set("end_date", endDate);
+
+      const response = await fetch(
+        `${API_BASE_URL}/api/fred/series?${query.toString()}`
+      );
+      if (!response.ok) {
+        throw new Error("Failed to load series data.");
+      }
+
+      const data = (await response.json()) as FredSeriesResponse;
+      const changePercent = data.change?.percent ?? 0;
+      const normalizedSeries = normalizeSeries(data.observations ?? []);
+      const nextCard: MacroSeriesCard = {
+        indicatorKey: selectedIndicator,
+        name: data.indicator_label || toLabel(selectedIndicator),
+        value: formatMetricValue(data.latest?.value ?? null),
+        change: formatPercentChange(changePercent),
+        points: normalizedSeries.points,
+        xLabels: normalizedSeries.xLabels,
+        tone: changePercent >= 0 ? "up" : "down",
+        type: "macro",
+      };
+
+      setMacroCards((previous) => {
+        const withoutCurrent = previous.filter((card) => card.indicatorKey !== selectedIndicator);
+        const nextCards = [...withoutCurrent, nextCard];
+        if (nextCards.length <= MAX_MACRO_GRAPHS) return nextCards;
+        return nextCards.slice(nextCards.length - MAX_MACRO_GRAPHS);
+      });
+    } catch {
+      setMacroError("Unable to load series data for the selected indicator.");
+    } finally {
+      setMacroLoading(false);
+    }
+  };
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -343,36 +623,48 @@ export default function Home() {
         <aside className={styles.sidebar}>
           <p className={styles.sidebarTitle}>Features</p>
           <ul className={styles.moduleList}>
-            <li className={styles.moduleItem}>
-              <ChartCandlestick className={styles.moduleIcon} aria-hidden />
-              <span>Market</span>
+            <li>
+              <a href="#today-market" className={`${styles.moduleItem} ${styles.moduleLink}`}>
+                <ChartCandlestick className={styles.moduleIcon} aria-hidden />
+                <span>Market</span>
+              </a>
             </li>
-            <li className={styles.moduleItem}>
-              <Earth className={styles.moduleIcon} aria-hidden />
-              <span>Macro Indicators</span>
+            <li>
+              <a href="#macro-indicators" className={`${styles.moduleItem} ${styles.moduleLink}`}>
+                <Earth className={styles.moduleIcon} aria-hidden />
+                <span>Macro Indicators</span>
+              </a>
             </li>
-            <li className={styles.moduleItem}>
-              <Newspaper className={styles.moduleIcon} aria-hidden />
-              <span>Timelines</span>
+            <li>
+              <a href="#timelines" className={`${styles.moduleItem} ${styles.moduleLink}`}>
+                <Newspaper className={styles.moduleIcon} aria-hidden />
+                <span>Timelines</span>
+              </a>
             </li>
-            <li className={styles.moduleItem}>
-              <Thermometer className={styles.moduleIcon} aria-hidden />
-              <span>Theme Heat</span>
+            <li>
+              <a href="#theme-heat" className={`${styles.moduleItem} ${styles.moduleLink}`}>
+                <Thermometer className={styles.moduleIcon} aria-hidden />
+                <span>Theme Heat</span>
+              </a>
             </li>
-            <li className={styles.moduleItem}>
-              <Bot className={styles.moduleIcon} aria-hidden />
-              <span>AI Assistant</span>
+            <li>
+              <a href="#ai-assistant" className={`${styles.moduleItem} ${styles.moduleLink}`}>
+                <Bot className={styles.moduleIcon} aria-hidden />
+                <span>AI Assistant</span>
+              </a>
             </li>
-            <li className={styles.moduleItem}>
-              <Bell className={styles.moduleIcon} aria-hidden />
-              <span>Alerts</span>
+            <li>
+              <a href="#notifications" className={`${styles.moduleItem} ${styles.moduleLink}`}>
+                <Bell className={styles.moduleIcon} aria-hidden />
+                <span>Alerts</span>
+              </a>
             </li>
           </ul>
         </aside>
 
         <section className={styles.contentGrid}>
           <div className={styles.stack}>
-            <section className={styles.panel}>
+            <section id="today-market" className={styles.panel}>
               <div className={styles.panelHead}>
                 <h2 className={styles.featureTitle}>Today&apos;s Market</h2>
                 <span className={styles.annotation}>
@@ -404,39 +696,142 @@ export default function Home() {
               </div>
             </section>
 
-            <section className={styles.panel}>
+            <section id="macro-indicators" className={styles.panel}>
               <div className={styles.panelHead}>
                 <h2 className={styles.featureTitle}>Today&apos;s Macroeconomic Indicators</h2>
                 <span className={styles.annotation}>
-                  TODO: Connect backend API to display real data, add graphs page with more detailed information for graphs
+                  TODO: Add global/country expansion (currently USA only) and richer chart drill-down
                 </span>
               </div>
 
-              <div className={styles.seriesGrid}>
-                {macroSeriesCards.map((card) => (
-                  <article key={card.name} className={styles.seriesCard}>
-                    <div className={styles.seriesTop}>
-                      <div>
-                        <p className={styles.seriesName}>{card.name}</p>
-                      </div>
-                      <div className={styles.seriesMetric}>
-                        <p className={styles.seriesValue}>{card.value}</p>
-                        <p
-                          className={`${styles.seriesChange} ${
-                            card.tone === "up" ? styles.changeUp : styles.changeDown
-                          }`}
-                        >
-                          {card.change}
-                        </p>
-                      </div>
-                    </div>
-                    <Sparkline points={card.points} tone={card.tone} />
-                  </article>
-                ))}
+              <div className={styles.macroFilterRow}>
+                <label className={styles.macroFilterField}>
+                  <span className={styles.macroFilterLabel}>Country</span>
+                  <select
+                    className={styles.macroSelect}
+                    value={selectedCountry}
+                    onChange={(event) => {
+                      setSelectedCountry(event.target.value);
+                      setMacroCards([]);
+                    }}
+                  >
+                    <option value="USA">USA</option>
+                  </select>
+                </label>
+
+                <label className={styles.macroFilterField}>
+                  <span className={styles.macroFilterLabel}>Category</span>
+                  <select
+                    className={styles.macroSelect}
+                    value={selectedCategory}
+                    onChange={(event) => {
+                      setSelectedCategory(event.target.value);
+                      setSelectedIndicator("");
+                    }}
+                    disabled={categories.length === 0}
+                  >
+                    {categories.length === 0 ? (
+                      <option value="">Loading categories...</option>
+                    ) : null}
+                    {categories.map((category) => (
+                      <option key={category.key} value={category.key}>
+                        {category.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className={styles.macroFilterField}>
+                  <span className={styles.macroFilterLabel}>Indicator (max 8)</span>
+                  <select
+                    className={styles.macroSelect}
+                    value={selectedIndicator}
+                    onChange={handleIndicatorSelect}
+                    disabled={!selectedCategory || indicators.length === 0}
+                  >
+                    <option value="">
+                      {selectedCategory ? "Choose indicator..." : "Choose category first"}
+                    </option>
+                    {indicators.map((indicator) => (
+                      <option key={indicator.key} value={indicator.key}>
+                        {indicator.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className={styles.macroFilterField}>
+                  <span className={styles.macroFilterLabel}>Start Date</span>
+                  <input
+                    type="date"
+                    className={styles.macroDateInput}
+                    value={startDate}
+                    onChange={(event) => setStartDate(event.target.value)}
+                    max={endDate || undefined}
+                  />
+                </label>
+
+                <label className={styles.macroFilterField}>
+                  <span className={styles.macroFilterLabel}>End Date</span>
+                  <input
+                    type="date"
+                    className={styles.macroDateInput}
+                    value={endDate}
+                    onChange={(event) => setEndDate(event.target.value)}
+                    min={startDate || undefined}
+                  />
+                </label>
+
               </div>
+
+              <div className={styles.macroSearchRow}>
+                <button
+                  type="button"
+                  className={styles.macroSearchButton}
+                  onClick={handleSearchClick}
+                  disabled={!selectedCategory || !selectedIndicator || macroLoading}
+                >
+                  {macroLoading ? "Loading..." : "Search"}
+                </button>
+              </div>
+
+              <p className={styles.macroStatus}>
+                Selected indicators: {macroCards.length}/{MAX_MACRO_GRAPHS}
+              </p>
+              {macroLoading ? <p className={styles.macroStatus}>Loading macro data...</p> : null}
+              {macroError ? <p className={styles.macroError}>{macroError}</p> : null}
+
+              {macroCards.length === 0 ? (
+                <p className={styles.macroEmpty}>
+                  Search to generate graphs.
+                </p>
+              ) : (
+                <div className={styles.seriesGrid}>
+                  {macroCards.map((card) => (
+                    <article key={card.indicatorKey} className={styles.seriesCard}>
+                      <div className={styles.seriesTop}>
+                        <div>
+                          <p className={styles.seriesName}>{card.name}</p>
+                        </div>
+                        <div className={styles.seriesMetric}>
+                          <p className={styles.seriesValue}>{card.value}</p>
+                          <p
+                            className={`${styles.seriesChange} ${
+                              card.tone === "up" ? styles.changeUp : styles.changeDown
+                            }`}
+                          >
+                            {card.change}
+                          </p>
+                        </div>
+                      </div>
+                      <Sparkline points={card.points} tone={card.tone} xLabels={card.xLabels} />
+                    </article>
+                  ))}
+                </div>
+              )}
             </section>
 
-            <section className={styles.panel}>
+            <section id="timelines" className={styles.panel}>
               <div className={styles.panelHead}>
                 <h2 className={styles.featureTitle}>
                   Timelines
@@ -478,7 +873,7 @@ export default function Home() {
           </div>
 
           <div className={styles.stack}>
-            <section className={styles.panel}>
+            <section id="theme-heat" className={styles.panel}>
               <div className={styles.panelHead}>
                 <h2 className={styles.featureTitle}>
                   Trending Themes
@@ -502,7 +897,7 @@ export default function Home() {
               </div>
             </section>
 
-            <section className={styles.panel}>
+            <section id="ai-assistant" className={styles.panel}>
               <div className={styles.panelHead}>
                 <h2 className={styles.featureTitle}>
                   Chatbot
@@ -549,7 +944,7 @@ export default function Home() {
               </div>
             </section>
 
-            <section className={styles.panel}>
+            <section id="notifications" className={styles.panel}>
               <div className={styles.panelHead}>
                 <h2 className={styles.featureTitle}>
                   Notifications

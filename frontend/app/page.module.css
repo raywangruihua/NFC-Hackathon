@@ -100,6 +100,14 @@
   gap: 0.55rem;
 }
 
+.moduleLink {
+  text-decoration: none;
+}
+
+.moduleLink:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .moduleItemActive {
   border-color: rgba(255, 255, 255, 0.52);
   background: rgba(255, 255, 255, 0.1);
@@ -274,6 +282,115 @@
   padding: 0.75rem;
 }
 
+.macroFilterRow {
+  margin-bottom: 0.75rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.5rem;
+}
+
+.macroFilterField {
+  display: grid;
+  grid-template-rows: 1rem 2.15rem;
+  gap: 0.25rem;
+  justify-items: stretch;
+}
+
+.macroFilterLabel {
+  display: block;
+  margin: 0;
+  font-size: 0.688rem;
+  line-height: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.macroSelect {
+  width: 100%;
+  height: 2.15rem;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0;
+  background: #0d0d0d;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.84rem;
+  color: #ececec;
+  outline: none;
+}
+
+.macroDateInput {
+  width: 100%;
+  height: 2.15rem;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0;
+  background: #0d0d0d;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.84rem;
+  color: #ececec;
+  outline: none;
+}
+
+.macroSearchRow {
+  margin-bottom: 0.5rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.macroSearchButton {
+  width: calc((100% - 2rem) / 5);
+  min-width: 140px;
+  height: 2.15rem;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.5rem 0.6rem;
+  font-size: 0.84rem;
+  color: #efefef;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+}
+
+.macroSearchButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.macroSelect:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.macroStatus {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--text-soft);
+}
+
+.macroError {
+  margin: 0.35rem 0 0;
+  font-size: 0.75rem;
+  color: #fecaca;
+}
+
+.macroEmpty {
+  margin: 0.75rem 0 0;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.75rem;
+  font-size: 0.8rem;
+  color: var(--text-soft);
+}
 
 .queryRow {
   margin-bottom: 1rem;
@@ -385,6 +502,12 @@
   font-size: 0.875rem;
   font-weight: 500;
   color: #fcd34d;
+}
+
+.timelineText {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  color: var(--text-soft);
 }
 
 .timelineSource {

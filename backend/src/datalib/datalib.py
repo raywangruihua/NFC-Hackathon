@@ -48,7 +48,7 @@ Issues:
 
 Webcrawler crawls news websites by searching key terms via the GDELT API. The crawler can be run via run_gdelt_spider()
 
-TODO: Implement data pipeline for crawler.
+TODO: Find optimal search query terms for unbiased article crawling
 """
 
 #################### Economic Indicator Data API ####################
