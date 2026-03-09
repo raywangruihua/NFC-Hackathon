@@ -1,11 +1,13 @@
 import os
 import re
+import math
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
-from databaselib.db import get_active_themes
+from databaselib.db import get_active_themes, get_events
 
 
 from datalib.datalib import (
@@ -481,18 +483,66 @@ def get_hottest_themes() -> Response:
 @app.get("/api/news")
 def get_news() -> Response:
     """
-    Return news articles.
-    TODO: Get news articles from database (raw)
+    Return recent news articles ranked by recency-weighted importance.
+    Falls back to placeholders if DB events are unavailable.
     """
     limit_raw = request.args.get("limit")
     try:
-        limit = int(limit_raw) if limit_raw else len(EXAMPLE_NEWS_ARTICLES)
+        limit = int(limit_raw) if limit_raw else 8
     except ValueError:
-        limit = len(EXAMPLE_NEWS_ARTICLES)
+        limit = 8
 
-    limit = max(1, min(limit, len(EXAMPLE_NEWS_ARTICLES)))
-    return jsonify({"articles": EXAMPLE_NEWS_ARTICLES[:limit]})
+    limit = max(1, min(limit, 20))
+
+    try:
+        events = get_events(days=7)
+    except Exception:
+        events = []
+
+    now = datetime.now(timezone.utc)
+    ranked: list[Dict[str, Any]] = []
+
+    for event in events:
+        published_at = event.get("published_at")
+        if not published_at:
+            continue
+
+        try:
+            published_dt = datetime.fromisoformat(str(published_at).replace("Z", "+00:00"))
+            age_hours = max((now - published_dt).total_seconds() / 3600, 0.0)
+            recency_score = math.exp(-age_hours / 24.0)
+        except Exception:
+            recency_score = 0.0
+
+        try:
+            importance_score = float(event.get("importance_score") or 0.0)
+        except Exception:
+            importance_score = 0.0
+        importance_score = max(0.0, min(1.0, importance_score))
+
+        weighted_score = 0.7 * recency_score + 0.3 * importance_score
+
+        title = event.get("title") or event.get("topic") or "Market Update"
+        content = str(event.get("content") or "").strip()
+        description = content[:220] if content else "No summary available."
+
+        ranked.append(
+            {
+                "id": str(event.get("event_id") or f"{title}-{published_at}"),
+                "title": str(title),
+                "description": description,
+                "score": round(weighted_score, 4),
+            }
+        )
+
+    if not ranked:
+        return jsonify({"articles": EXAMPLE_NEWS_ARTICLES[: min(limit, len(EXAMPLE_NEWS_ARTICLES))]})
+
+    ranked.sort(key=lambda item: item["score"], reverse=True)
+    return jsonify({"articles": ranked[:limit]})
 
 
 if __name__ == "__main__":
     app.run(port=8000, debug=True)
+
+

@@ -3,6 +3,7 @@ from typing import List, Dict
 import uuid
 from datetime import datetime, timezone
 
+
 def _safe_asset_classes(event: Dict) -> list[str]:
     asset_classes = event.get("asset_classes")
     if isinstance(asset_classes, list):
@@ -23,6 +24,8 @@ def group_events_into_themes(events: List[Dict]) -> List[Dict]:
     themes_dict: Dict[str, List[Dict]] = {}
 
     for event in events:
+        if not isinstance(event, dict):
+            continue
         topic = event.get("topic")
         assets = _safe_asset_classes(event)
         key = topic.strip() if isinstance(topic, str) and topic.strip() else "-".join(assets) or "misc"
