@@ -29,28 +29,28 @@ type MarketSeriesCard = SeriesCard & {
   marketKey: string;
 };
 
-type FredCategoryOption = {
+type MacroCategoryOption = {
   key: string;
   label: string;
 };
 
-type FredIndicatorOption = {
+type MacroIndicatorOption = {
   key: string;
   label: string;
   series_id: string;
 };
 
-type FredCategoriesResponse = {
+type MacroCategoriesResponse = {
   country: string;
-  categories: FredCategoryOption[];
+  categories: MacroCategoryOption[];
 };
 
-type FredIndicatorsResponse = {
+type MacroIndicatorsResponse = {
   category: string;
-  indicators: FredIndicatorOption[];
+  indicators: MacroIndicatorOption[];
 };
 
-type FredSeriesResponse = {
+type MacroSeriesResponse = {
   category: string | null;
   indicator: string;
   indicator_label: string;
@@ -218,7 +218,7 @@ const chatReasoning = [
 
 // Placeholder sources cited by chatbot when thinking
 const chatSources = [
-  "FRED: 10Y Real Yield",
+  "Macro: 10Y Real Yield",
   "BLS CPI Release",
   "SEC Filings: Selected tech names",
 ];
@@ -245,10 +245,39 @@ const alertRules: AlertRule[] = [
   },
 ];
 
-function formatXAxisDateLabel(rawDate: string) {
+type XAxisGranularity = "day" | "month" | "year";
+
+function chooseXAxisGranularity(xLabels: string[]) {
+  if (xLabels.length < 2) return "day" as XAxisGranularity;
+
+  const start = new Date(`${xLabels[0]}T00:00:00`);
+  const end = new Date(`${xLabels[xLabels.length - 1]}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return "month" as XAxisGranularity;
+  }
+
+  const spanMs = Math.abs(end.getTime() - start.getTime());
+  const dayMs = 24 * 60 * 60 * 1000;
+  const spanDays = spanMs / dayMs;
+
+  if (spanDays <= 92) return "day";
+  if (spanDays <= 365 * 3) return "month";
+  return "year";
+}
+
+function formatXAxisDateLabel(rawDate: string, granularity: XAxisGranularity) {
   const parsed = new Date(`${rawDate}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return rawDate;
-  return Intl.DateTimeFormat("en-US", { month: "short", year: "2-digit" }).format(parsed);
+
+  if (granularity === "day") {
+    return Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(parsed);
+  }
+
+  if (granularity === "month") {
+    return Intl.DateTimeFormat("en-US", { month: "short", year: "2-digit" }).format(parsed);
+  }
+
+  return Intl.DateTimeFormat("en-US", { year: "numeric" }).format(parsed);
 }
 
 function Sparkline({
@@ -290,20 +319,23 @@ function Sparkline({
   ];
 
   const hasDateLabels = Array.isArray(xLabels) && xLabels.length === points.length;
+  const xAxisGranularity = hasDateLabels ? chooseXAxisGranularity(xLabels) : "month";
   const midpointIndex = Math.floor((points.length - 1) / 2);
   const xTicks = [
     {
-      label: hasDateLabels ? formatXAxisDateLabel(xLabels[0]) : "T1",
+      label: hasDateLabels ? formatXAxisDateLabel(xLabels[0], xAxisGranularity) : "T1",
       x: padLeft,
     },
     {
       label: hasDateLabels
-        ? formatXAxisDateLabel(xLabels[midpointIndex])
+        ? formatXAxisDateLabel(xLabels[midpointIndex], xAxisGranularity)
         : `T${Math.ceil(points.length / 2)}`,
       x: padLeft + plotWidth / 2,
     },
     {
-      label: hasDateLabels ? formatXAxisDateLabel(xLabels[points.length - 1]) : `T${points.length}`,
+      label: hasDateLabels
+        ? formatXAxisDateLabel(xLabels[points.length - 1], xAxisGranularity)
+        : `T${points.length}`,
       x: padLeft + plotWidth,
     },
   ];
@@ -512,6 +544,13 @@ function toRecentMonthOptions(count = 12) {
   });
 }
 
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
 function extractAlphaClose(row: Record<string, string>) {
   const preferred = ["5. adjusted close", "4. close"];
   for (const key of preferred) {
@@ -588,9 +627,9 @@ export default function Home() {
   const [marketError, setMarketError] = useState<string | null>(null);
   const [marketSymbolLoading, setMarketSymbolLoading] = useState(false);
   const [selectedCountry, setSelectedCountry] = useState("USA");
-  const [categories, setCategories] = useState<FredCategoryOption[]>([]);
+  const [categories, setCategories] = useState<MacroCategoryOption[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("");
-  const [indicators, setIndicators] = useState<FredIndicatorOption[]>([]);
+  const [indicators, setIndicators] = useState<MacroIndicatorOption[]>([]);
   const [selectedIndicator, setSelectedIndicator] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -602,6 +641,12 @@ export default function Home() {
   const [newsError, setNewsError] = useState<string | null>(null);
   const [activeNewsIndex, setActiveNewsIndex] = useState(0);
   const newsViewportRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const today = new Date();
+    setStartDate((current) => current || `${today.getFullYear()}-01-01`);
+    setEndDate((current) => current || toDateInputValue(today));
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -719,7 +764,7 @@ export default function Home() {
           throw new Error("Failed to load categories.");
         }
 
-        const data = (await response.json()) as FredCategoriesResponse;
+        const data = (await response.json()) as MacroCategoriesResponse;
         const nextCategories = data.categories ?? [];
         setCategories(nextCategories);
         setSelectedCategory((current) => {
@@ -732,7 +777,7 @@ export default function Home() {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setCategories([]);
         setSelectedCategory("");
-        setMacroError("Unable to load FRED categories.");
+        setMacroError("Unable to load macro categories.");
       } finally {
         setMacroLoading(false);
       }
@@ -764,7 +809,7 @@ export default function Home() {
           throw new Error("Failed to load indicators.");
         }
 
-        const data = (await response.json()) as FredIndicatorsResponse;
+        const data = (await response.json()) as MacroIndicatorsResponse;
         setIndicators(data.indicators ?? []);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
@@ -784,6 +829,7 @@ export default function Home() {
     setSelectedIndicator(event.target.value);
   };
 
+  // Query backend on search
   const handleSearchClick = async () => {
     if (!selectedIndicator || !selectedCategory) return;
     if (startDate && endDate && startDate > endDate) {
@@ -810,7 +856,7 @@ export default function Home() {
         throw new Error("Failed to load series data.");
       }
 
-      const data = (await response.json()) as FredSeriesResponse;
+      const data = (await response.json()) as MacroSeriesResponse;
       const changePercent = data.change?.percent ?? 0;
       const normalizedSeries = normalizeSeries(data.observations ?? []);
       const nextCard: MacroSeriesCard = {

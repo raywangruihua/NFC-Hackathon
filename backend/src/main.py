@@ -358,7 +358,7 @@ def get_time_series_monthly_adjusted() -> Response:
 
 
 @app.get("/api/macroeconomic/categories")
-def get_fred_categories() -> Response:
+def get_macro_categories() -> Response:
     """
     Return all categories available for the country chosen.
     TODO: Add more APIs to support more countries
@@ -376,7 +376,7 @@ def get_fred_categories() -> Response:
 
 
 @app.get("/api/macroeconomic/indicators")
-def get_fred_indicators() -> Response:
+def get_macro_indicators() -> Response:
     """
     Return all indicators that fall under the category requested.
     """
@@ -394,7 +394,7 @@ def get_fred_indicators() -> Response:
 
 
 @app.get("/api/macroeconomic/series")
-def get_fred_series() -> Response:
+def get_macro_series() -> Response:
     """
     Return series data for indicator requested.
     """
