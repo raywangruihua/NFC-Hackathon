@@ -468,6 +468,13 @@ Info on articles that have been ingested to storage. Contains both processed and
 Many-to-many link between events and themes. One event can belong to multiple
 themes.
 
+| Field | Type | Description |
+| --- | --- | --- |
+| id | uuid | Primary key |
+| event_id | uuid | Foreign key to events |
+| theme_id | uuid | Foreign key to events |
+| created_at | timestamptz | Time row was created |
+
 ### `portfolio_exposure`
 
 Per-user portfolio holdings. Used to match themes to user risk.
