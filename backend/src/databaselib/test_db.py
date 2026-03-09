@@ -18,30 +18,30 @@ from .db import (
 from .embeddings import embed_document, embed_query
 
 # ── 0. Cleanup previous test data ────────────────────────────────────────────
-supabase.table("event_theme_map").delete().neq(
-    "id", "00000000-0000-0000-0000-000000000000"
-).execute()
-supabase.table("memory").delete().neq(
-    "id", "00000000-0000-0000-0000-000000000000"
-).execute()
-supabase.table("recommendations").delete().neq(
-    "id", "00000000-0000-0000-0000-000000000000"
-).execute()
-supabase.table("risk_alerts").delete().neq(
-    "id", "00000000-0000-0000-0000-000000000000"
-).execute()
-supabase.table("themes").delete().neq(
-    "theme_id", "00000000-0000-0000-0000-000000000000"
-).execute()
-supabase.table("events").delete().neq(
-    "event_id", "00000000-0000-0000-0000-000000000000"
-).execute()
-supabase.table("raw_ingestions").delete().neq(
-    "id", "00000000-0000-0000-0000-000000000000"
-).execute()
-supabase.storage.empty_bucket("raw-payloads")
+# supabase.table("event_theme_map").delete().neq(
+#     "id", "00000000-0000-0000-0000-000000000000"
+# ).execute()
+# supabase.table("memory").delete().neq(
+#     "id", "00000000-0000-0000-0000-000000000000"
+# ).execute()
+# supabase.table("recommendations").delete().neq(
+#     "id", "00000000-0000-0000-0000-000000000000"
+# ).execute()
+# supabase.table("risk_alerts").delete().neq(
+#     "id", "00000000-0000-0000-0000-000000000000"
+# ).execute()
+# supabase.table("themes").delete().neq(
+#     "theme_id", "00000000-0000-0000-0000-000000000000"
+# ).execute()
+# supabase.table("events").delete().neq(
+#     "event_id", "00000000-0000-0000-0000-000000000000"
+# ).execute()
+# supabase.table("raw_ingestions").delete().neq(
+#     "id", "00000000-0000-0000-0000-000000000000"
+# ).execute()
+# supabase.storage.empty_bucket("raw-payloads")
 
-print("✓ Cleaned up previous test data")
+# print("✓ Cleaned up previous test data")
 
 # ── 1. Upload a raw article to storage ───────────────────────────────────────
 

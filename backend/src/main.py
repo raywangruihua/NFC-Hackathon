@@ -24,6 +24,9 @@ from datalib.datalib import (
 
 load_dotenv()
 FRONT_END_SERVER = os.getenv("FRONT_END_SERVER")
+# fallback to default
+if FRONT_END_SERVER is None:
+    FRONT_END_SERVER = "http://localhost:3000"
 
 app = Flask(__name__)
 CORS(app, origins=FRONT_END_SERVER)
