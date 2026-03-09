@@ -186,15 +186,15 @@ const timelineEvents: TimelineEvent[] = [
 
 // Placeholder theme heat data
 const heatCells: HeatCell[] = [
-  { topic: "Rate Cuts", score: 88 },
-  { topic: "AI Capex", score: 73 },
-  { topic: "Energy Shock", score: 66 },
-  { topic: "Fiscal Risk", score: 54 },
-  { topic: "China Demand", score: 49 },
-  { topic: "Supply Chain", score: 0 },
-  { topic: "Bank Stress", score: 61 },
-  { topic: "Housing", score: 47 },
-  { topic: "USD Strength", score: 52 },
+  { topic: "Rate Cuts", score: 4 },
+  { topic: "AI Capex", score: 10 },
+  { topic: "Energy Shock", score: 20 },
+  { topic: "Fiscal Risk", score: 30 },
+  { topic: "China Demand", score: 40 },
+  { topic: "Supply Chain", score: 50 },
+  { topic: "Bank Stress", score: 60 },
+  { topic: "Housing", score: 70 },
+  { topic: "USD Strength", score: 9110 },
 ];
 
 // Placeholder chatbot example 
@@ -389,17 +389,30 @@ function Sparkline({
 
 function heatToneStyle(score: number): CSSProperties {
   /**
-   * Continuous red -> yellow -> green scale.
-   * Uses the same intermediate interpolation approach as before.
+   * Fixed 10-step heat scale:
+   * low values -> green, mid values -> yellow/orange, high values -> red.
    */
-  const clamped = Math.max(0, Math.min(100, score));
-  const hue = (clamped / 100) * 120; // 0=red, 60=yellow, 120=green
-  const fill = `hsl(${hue}, 100%, 30%)`;
-  const border = `hsl(${hue}, 100%, 30%)`;
+  const clamped = Math.max(0, Math.min(score, 99));
+  const palette = [
+    "#1a9850",
+    "#4db15e",
+    "#7acb68",
+    "#a5da70",
+    "#d0e878",
+    "#f4f491",
+    "#f7d26a",
+    "#f9b05a",
+    "#ef7e4a",
+    "#d73027",
+  ];
+  const bucketIndex = Math.floor(clamped / palette.length);
+  const fill = palette[bucketIndex];
+  const textColor = bucketIndex <= 1 || bucketIndex >= 8 ? "#f5f5f5" : "#111111";
 
   return {
     backgroundColor: fill,
-    borderColor: border,
+    borderColor: fill,
+    color: textColor,
   };
 }
 
@@ -932,7 +945,7 @@ export default function Home() {
     <div className={styles.page}>
       <header className={styles.header}>
         <div className={styles.headerInner}>
-          <p className={styles.brand}>DAMMIT FINANCE MANAGER</p>
+          <p className={styles.brand}>DAMMIT MACROECONOMIC TRACKER</p>
         </div>
       </header>
 
@@ -984,9 +997,6 @@ export default function Home() {
             <section id="today-market" className={styles.panel}>
               <div className={styles.panelHead}>
                 <h2 className={styles.featureTitle}>Today&apos;s Market</h2>
-                <span className={styles.annotation}>
-                  Search symbols and time series from Alpha Vantage
-                </span>
               </div>
 
               <div className={styles.macroFilterRow}>
@@ -1353,7 +1363,7 @@ export default function Home() {
             <section id="news-feed" className={styles.panel}>
               <div className={styles.panelHead}>
                 <h2 className={styles.featureTitle}>
-                  News
+                  Current News
                 </h2>
               </div>
 
