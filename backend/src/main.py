@@ -5,6 +5,8 @@ from typing import Any, Dict
 from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
+from databaselib.db import get_active_themes
+
 
 from datalib.datalib import (
     get_fred_indicator_data,
@@ -169,6 +171,33 @@ def get_fred_series() -> Response:
         }
     )
 
+@app.get("/api/themes/hottest")
+def get_hottest_themes() -> Response:
+    """
+    Return top N active themes ordered by heat score descending.
+    Default limit is 9 for frontend heat grid.
+    """
+    limit_raw = request.args.get("limit", "9")
+    try:
+        limit = max(1, min(int(limit_raw), 50))
+    except ValueError:
+        limit = 9
+
+    themes = get_active_themes()
+    top_themes = themes[:limit]
+
+    return jsonify(
+        [
+            {
+                "topic": theme.get("title", "Unknown"),
+                "score": float(theme.get("heat_score") or 0.0),
+                "region": theme.get("region"),
+                "asset_classes": theme.get("asset_classes") or [],
+                "status": theme.get("status"),
+            }
+            for theme in top_themes
+        ]
+    )
 
 if __name__ == "__main__":
     app.run(port=8000, debug=True)

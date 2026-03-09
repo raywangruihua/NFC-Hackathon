@@ -1,105 +1,125 @@
-from datetime import datetime
+import sys
 import uuid
+from datetime import datetime, timezone
 
-from .macro_themes import group_events_into_themes
-from .heat_score import calculate_theme_heat
-from .market_impact import generate_market_impact
-from .portfolio_analysis import analyze_portfolio_risk
+from backend.src.analysislib.macro_themes import group_events_into_themes
+from backend.src.analysislib.heat_score import calculate_theme_heat
+from backend.src.databaselib.db import supabase
 
-# -------------------------
-# Placeholder user portfolio
-# -------------------------
-user_id = str(uuid.uuid4())
-portfolio = [
-    {"ticker": "AAPL", "asset_class": "equities", "region": "US", "sector": "tech", "weight": 0.4},
-    {"ticker": "GOOGL", "asset_class": "equities", "region": "US", "sector": "tech", "weight": 0.2},
-    {"ticker": "US10Y", "asset_class": "bonds", "region": "US", "sector": "government", "weight": 0.25},
-    {"ticker": "SP500", "asset_class": "equities", "region": "US", "sector": "index", "weight": 0.15}
-]
+def _to_iso(value):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
 
-# -------------------------
-# Example incoming events
-# -------------------------
-example_events = [
-    {
-        "topic": "inflation",
-        "asset_classes": ["bonds", "equities"],
-        "importance_score": 0.59,
-        "sentiment": "risk-off",
-        "published_at": "2026-03-04T10:00:00Z"
-    },
-    {
-        "topic": "interest rate",
-        "asset_classes": ["bonds"],
-        "importance_score": 0.8,
-        "sentiment": "risk-off",
-        "published_at": "2026-03-04T11:00:00Z"
-    },
-    {
-        "topic": "interest rate",
-        "asset_classes": ["equities"],
-        "importance_score": 1.2,
-        "sentiment": "risk-on",
-        "published_at": "2026-03-05T09:00:00Z"
-    }
-]
+def assert_true(condition: bool, message: str) -> None:
+    if not condition:
+        raise AssertionError(message)
 
-# -------------------------
-# 1. Group events into themes
-# -------------------------
-themes = group_events_into_themes(example_events)
-print("=== Grouped Themes ===")
-for t in themes:
-    print(f"- Theme: {t['title']}, Events: {len(t['events'])}, First Seen: {t['first_seen_at']}, Last Seen: {t['last_seen_at']}")
-print("\n")
 
-# -------------------------
-# 2. Calculate heat scores
-# -------------------------
-themes_with_heat = calculate_theme_heat(themes)
-print("=== Themes with Heat Scores ===")
-for t in themes_with_heat:
-    print(f"- Theme: {t['title']}, Heat Score: {t['heat_score']}, Asset Classes: {t['asset_classes']}")
-print("\n")
+def upsert_theme_by_title_region(theme: dict) -> str:
+    title = theme["title"]
+    region = theme.get("region") or ""
 
-# -------------------------
-# 3. Generate market impact
-# -------------------------
-market_summary = generate_market_impact(themes_with_heat)
-print("=== Market Impact Summary ===")
-for m in market_summary:
-    print(f"- Theme: {m['theme_name']}, Heat: {m['heat_score']}, Direction: {m['direction']}, Affected Assets: {m['affected_assets']}")
-print("\n")
-
-# -------------------------
-# 4. Analyze portfolio risk
-# -------------------------
-portfolio_risk = analyze_portfolio_risk(user_id, market_summary, portfolio)
-print("=== Portfolio Exposure ===")
-for p in portfolio_risk['portfolio_exposure']:
-    print(f"- Ticker: {p['ticker']}, Asset Class: {p['asset_class']}, Exposure: {p['exposure_pct']}%")
-
-print("\n=== Portfolio Risk Alerts ===")
-for alert in portfolio_risk['risk_alerts']:
-    print(f"- Theme: {alert['theme_id']}, Severity: {alert['severity']}, Trigger: {alert['trigger_reason']}")
-print("\n")
-
-# -------------------------
-# 5. Compute Overall Portfolio Risk (dynamic)
-# -------------------------
-overall_risk = 0.0
-for alert in portfolio_risk['risk_alerts']:
-    # Find corresponding theme
-    theme = next(t for t in themes_with_heat if t['theme_id'] == alert['theme_id'])
-    # Compute exposure to affected assets
-    exposure = sum(
-        asset["weight"] for asset in portfolio 
-        if asset["asset_class"] in theme['asset_classes']
+    existing = (
+        supabase.table("themes")
+        .select("theme_id")
+        .eq("title", title)
+        .eq("region", region)
+        .limit(1)
+        .execute()
+        .data
     )
-    overall_risk += exposure * theme['heat_score']
 
-# Scale to percentage for display (max heat ~2, max exposure ~1)
-max_possible_risk = len(portfolio_risk['risk_alerts']) * 2 * 1  # max heat * max exposure
-overall_risk_pct = round((overall_risk / max_possible_risk) * 100, 1)
+    payload = {
+        "title": title,
+        "description": theme.get("description", ""),
+        "status": "active",
+        "heat_score": float(theme.get("heat_score", 0.0)),
+        "asset_classes": theme.get("asset_classes", []),
+        "region": region,
+        "first_seen_at": _to_iso(theme.get("first_seen_at")) or datetime.now(timezone.utc).isoformat(),
+        "last_seen_at": _to_iso(theme.get("last_seen_at")) or datetime.now(timezone.utc).isoformat(),
+    }
 
-print(f"=== Overall Portfolio Risk (weighted placeholder) === {overall_risk_pct}%")
+    if existing:
+        theme_id = existing[0]["theme_id"]
+        supabase.table("themes").update(payload).eq("theme_id", theme_id).execute()
+        return theme_id
+
+    inserted = supabase.table("themes").insert(payload).execute().data
+    return inserted[0]["theme_id"]
+
+
+def run_pipeline_db_test() -> None:
+    run_id = str(uuid.uuid4())[:8]
+    test_topic_a = f"test-inflation-{run_id}"
+    test_topic_b = f"test-rates-{run_id}"
+
+    example_events = [
+        {
+            "topic": test_topic_a,
+            "asset_classes": ["bonds", "equities"],
+            "importance_score": 0.72,
+            "sentiment": "risk-off",
+            "published_at": "2026-03-04T10:00:00Z",
+            "region": "US",
+        },
+        {
+            "topic": test_topic_b,
+            "asset_classes": ["bonds"],
+            "importance_score": 0.81,
+            "sentiment": "risk-off",
+            "published_at": "2026-03-05T09:00:00Z",
+            "region": "US",
+        },
+        {
+            "topic": test_topic_b,
+            "asset_classes": ["equities"],
+            "importance_score": 0.93,
+            "sentiment": "risk-on",
+            "published_at": "2026-03-05T12:00:00Z",
+            "region": "US",
+        },
+    ]
+
+    # 1) Pipeline compute
+    themes = group_events_into_themes(example_events)
+    themes = calculate_theme_heat(themes)
+
+    assert_true(len(themes) >= 2, "Expected at least 2 themes")
+    for t in themes:
+        assert_true(0.0 <= float(t["heat_score"]) <= 100.0, "heat_score must be 0-100")
+
+    # 2) Store to DB
+    stored_ids = [upsert_theme_by_title_region(t) for t in themes]
+    assert_true(len(stored_ids) == len(themes), "Not all themes were stored")
+
+    # 3) Read-back verify
+    fetched = (
+        supabase.table("themes")
+        .select("theme_id,title,region,heat_score,status")
+        .in_("theme_id", stored_ids)
+        .execute()
+        .data
+    )
+
+    assert_true(len(fetched) == len(themes), "Stored themes not found on read-back")
+    by_title = {row["title"]: row for row in fetched}
+
+    assert_true(test_topic_a in by_title, f"Missing stored row for {test_topic_a}")
+    assert_true(test_topic_b in by_title, f"Missing stored row for {test_topic_b}")
+
+    for row in fetched:
+        assert_true(row["status"] in {"active", "cooling", "inactive"}, "Invalid status")
+        assert_true(0.0 <= float(row["heat_score"]) <= 100.0, "DB heat_score out of range")
+
+    print("PASS: pipeline -> themes DB integration test")
+    print(f"Stored theme_ids: {stored_ids}")
+
+
+if __name__ == "__main__":
+    try:
+        run_pipeline_db_test()
+    except Exception as exc:
+        print(f"FAIL: {exc}")
+        sys.exit(1)

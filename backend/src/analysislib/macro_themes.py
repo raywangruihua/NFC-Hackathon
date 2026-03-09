@@ -3,39 +3,51 @@ from typing import List, Dict
 import uuid
 from datetime import datetime, timezone
 
+def _safe_asset_classes(event: Dict) -> list[str]:
+    asset_classes = event.get("asset_classes")
+    if isinstance(asset_classes, list):
+        return [asset for asset in asset_classes if isinstance(asset, str) and asset]
+    return []
+
+
+def _parse_published_at(value: str | None) -> datetime:
+    if isinstance(value, str) and value:
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except Exception:
+            pass
+    return datetime.now(timezone.utc)
+
+
 def group_events_into_themes(events: List[Dict]) -> List[Dict]:
-    """
-    Groups events into macro themes, returning structures ready for `themes` and `event_theme_map`.
-    """
     themes_dict: Dict[str, List[Dict]] = {}
 
     for event in events:
-        key = event.get("topic") or "-".join(event.get("asset_classes", [])) or "misc"
-        if key not in themes_dict:
-            themes_dict[key] = []
-        themes_dict[key].append(event)
+        topic = event.get("topic")
+        assets = _safe_asset_classes(event)
+        key = topic.strip() if isinstance(topic, str) and topic.strip() else "-".join(assets) or "misc"
+        themes_dict.setdefault(key, []).append(event)
 
     theme_objects = []
     for key, events_in_theme in themes_dict.items():
-        first_seen = min(
-            [datetime.fromisoformat(e["published_at"].replace("Z", "+00:00")) for e in events_in_theme]
-        )
-        last_seen = max(
-            [datetime.fromisoformat(e["published_at"].replace("Z", "+00:00")) for e in events_in_theme]
-        )
-        asset_classes = list({a for e in events_in_theme for a in e.get("asset_classes", [])})
+        timestamps = [_parse_published_at(e.get("published_at")) for e in events_in_theme]
+        first_seen = min(timestamps)
+        last_seen = max(timestamps)
+        asset_classes = list({asset for e in events_in_theme for asset in _safe_asset_classes(e)})
+        regions = [r for r in (e.get("region") for e in events_in_theme) if isinstance(r, str) and r]
+        region = max(set(regions), key=regions.count) if regions else ""
 
         theme_objects.append({
             "theme_id": str(uuid.uuid4()),
             "title": key,
             "events": events_in_theme,
-            "heat_score": 0.0,  # placeholder, calculate later
+            "heat_score": 0.0,
             "first_seen_at": first_seen,
             "last_seen_at": last_seen,
             "asset_classes": asset_classes,
-            "region": "",  # placeholder
+            "region": region,
             "status": "active",
-            "description": ""
+            "description": "",
         })
 
     return theme_objects
