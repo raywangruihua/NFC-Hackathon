@@ -14,11 +14,9 @@ from datalib.datalib import (
 
 load_dotenv()
 FRONT_END_SERVER = os.getenv("FRONT_END_SERVER")
-DEFAULT_FRONTEND_ORIGINS = {"http://localhost:3000", "https://localhost:3000"}
-ALLOWED_ORIGINS = sorted(origin for origin in {FRONT_END_SERVER, *DEFAULT_FRONTEND_ORIGINS} if origin)
 
 app = Flask(__name__)
-CORS(app, origins=ALLOWED_ORIGINS)
+CORS(app, origins=FRONT_END_SERVER)
 
 
 ########################## Helper functions ##########################
