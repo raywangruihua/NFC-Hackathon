@@ -2,8 +2,8 @@
 from datetime import datetime, timedelta, timezone
 
 from databaselib.db import get_events, get_active_themes, insert_theme, update_theme
-from analysislib.macro_themes import group_events_into_themes
-from analysislib.heat_score import calculate_theme_heat
+from .logic.macro_themes import group_events_into_themes
+from .logic.heat_score import calculate_theme_heat
 
 
 def sync_theme_heat(days: int = 7) -> int:
@@ -41,3 +41,4 @@ def sync_theme_heat(days: int = 7) -> int:
 if __name__ == "__main__":
     n = sync_theme_heat(days=7)
     print(f"Synced {n} themes")
+

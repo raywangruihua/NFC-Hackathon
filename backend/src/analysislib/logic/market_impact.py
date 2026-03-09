@@ -17,19 +17,34 @@ def _safe_sentiment(event: Dict) -> str:
     return "neutral"
 
 
+def _safe_importance(event: Dict) -> float:
+    try:
+        value = float(event.get("importance_score") or 0.0)
+    except Exception:
+        value = 0.0
+    return max(0.0, min(1.0, value))
+
+
 def generate_market_impact(themes: List[Dict]) -> List[Dict]:
     impact_summary = []
 
     for theme in themes:
-        events = theme.get("events", [])
-        if not events:
+        if not isinstance(theme, dict):
             continue
 
-        event_count = len(events)
-        avg_importance = sum(e.get("importance_score", 0) for e in events) / event_count
-        sentiments = [_safe_sentiment(e) for e in events]
+        events = theme.get("events", [])
+        if not isinstance(events, list) or not events:
+            continue
+
+        cleaned_events = [e for e in events if isinstance(e, dict)]
+        if not cleaned_events:
+            continue
+
+        event_count = len(cleaned_events)
+        avg_importance = sum(_safe_importance(e) for e in cleaned_events) / event_count
+        sentiments = [_safe_sentiment(e) for e in cleaned_events]
         direction = Counter(sentiments).most_common(1)[0][0]
-        affected_assets = list({asset for e in events for asset in _safe_asset_classes(e)})
+        affected_assets = list({asset for e in cleaned_events for asset in _safe_asset_classes(e)})
 
         impact_summary.append({
             "theme_id": theme.get("theme_id"),

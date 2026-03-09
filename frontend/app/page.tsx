@@ -200,7 +200,6 @@ const heatCells: HeatCell[] = [
 */
 
 
-
 // Placeholder chatbot example 
 const chatMessages: ChatMessage[] = [
   {
