@@ -2,11 +2,22 @@
 from typing import List, Dict
 from collections import Counter
 
+
+def _safe_asset_classes(event: Dict) -> list[str]:
+    asset_classes = event.get("asset_classes")
+    if isinstance(asset_classes, list):
+        return [asset for asset in asset_classes if isinstance(asset, str) and asset]
+    return []
+
+
+def _safe_sentiment(event: Dict) -> str:
+    sentiment = event.get("sentiment")
+    if sentiment in {"risk-on", "risk-off", "neutral"}:
+        return sentiment
+    return "neutral"
+
+
 def generate_market_impact(themes: List[Dict]) -> List[Dict]:
-    """
-    Generates market impact info per theme.
-    Returns a list of dicts ready for portfolio analysis.
-    """
     impact_summary = []
 
     for theme in themes:
@@ -16,12 +27,9 @@ def generate_market_impact(themes: List[Dict]) -> List[Dict]:
 
         event_count = len(events)
         avg_importance = sum(e.get("importance_score", 0) for e in events) / event_count
-
-        sentiments = [e.get("sentiment", "neutral") for e in events]
+        sentiments = [_safe_sentiment(e) for e in events]
         direction = Counter(sentiments).most_common(1)[0][0]
-
-        asset_list = [asset for e in events for asset in e.get("asset_classes", [])]
-        affected_assets = list(set(asset_list))
+        affected_assets = list({asset for e in events for asset in _safe_asset_classes(e)})
 
         impact_summary.append({
             "theme_id": theme.get("theme_id"),
@@ -30,7 +38,7 @@ def generate_market_impact(themes: List[Dict]) -> List[Dict]:
             "event_count": event_count,
             "avg_importance": round(avg_importance, 3),
             "direction": direction,
-            "affected_assets": affected_assets
+            "affected_assets": affected_assets,
         })
 
     return impact_summary

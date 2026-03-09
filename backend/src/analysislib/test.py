@@ -1,105 +1,98 @@
-from datetime import datetime
-import uuid
+# backend/analysislib/test.py
+# This script seeds fake themes into database for frontend testing and verifies database connection.
+import sys
+from datetime import datetime, timezone
 
-from .macro_themes import group_events_into_themes
-from .heat_score import calculate_theme_heat
-from .market_impact import generate_market_impact
-from .portfolio_analysis import analyze_portfolio_risk
+from backend.src.databaselib.db import supabase
 
-# -------------------------
-# Placeholder user portfolio
-# -------------------------
-user_id = str(uuid.uuid4())
-portfolio = [
-    {"ticker": "AAPL", "asset_class": "equities", "region": "US", "sector": "tech", "weight": 0.4},
-    {"ticker": "GOOGL", "asset_class": "equities", "region": "US", "sector": "tech", "weight": 0.2},
-    {"ticker": "US10Y", "asset_class": "bonds", "region": "US", "sector": "government", "weight": 0.25},
-    {"ticker": "SP500", "asset_class": "equities", "region": "US", "sector": "index", "weight": 0.15}
-]
 
-# -------------------------
-# Example incoming events
-# -------------------------
-example_events = [
-    {
-        "topic": "inflation",
-        "asset_classes": ["bonds", "equities"],
-        "importance_score": 0.59,
-        "sentiment": "risk-off",
-        "published_at": "2026-03-04T10:00:00Z"
-    },
-    {
-        "topic": "interest rate",
-        "asset_classes": ["bonds"],
-        "importance_score": 0.8,
-        "sentiment": "risk-off",
-        "published_at": "2026-03-04T11:00:00Z"
-    },
-    {
-        "topic": "interest rate",
-        "asset_classes": ["equities"],
-        "importance_score": 1.2,
-        "sentiment": "risk-on",
-        "published_at": "2026-03-05T09:00:00Z"
-    }
-]
+def assert_true(condition: bool, message: str) -> None:
+    if not condition:
+        raise AssertionError(message)
 
-# -------------------------
-# 1. Group events into themes
-# -------------------------
-themes = group_events_into_themes(example_events)
-print("=== Grouped Themes ===")
-for t in themes:
-    print(f"- Theme: {t['title']}, Events: {len(t['events'])}, First Seen: {t['first_seen_at']}, Last Seen: {t['last_seen_at']}")
-print("\n")
 
-# -------------------------
-# 2. Calculate heat scores
-# -------------------------
-themes_with_heat = calculate_theme_heat(themes)
-print("=== Themes with Heat Scores ===")
-for t in themes_with_heat:
-    print(f"- Theme: {t['title']}, Heat Score: {t['heat_score']}, Asset Classes: {t['asset_classes']}")
-print("\n")
+def _iso_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
-# -------------------------
-# 3. Generate market impact
-# -------------------------
-market_summary = generate_market_impact(themes_with_heat)
-print("=== Market Impact Summary ===")
-for m in market_summary:
-    print(f"- Theme: {m['theme_name']}, Heat: {m['heat_score']}, Direction: {m['direction']}, Affected Assets: {m['affected_assets']}")
-print("\n")
 
-# -------------------------
-# 4. Analyze portfolio risk
-# -------------------------
-portfolio_risk = analyze_portfolio_risk(user_id, market_summary, portfolio)
-print("=== Portfolio Exposure ===")
-for p in portfolio_risk['portfolio_exposure']:
-    print(f"- Ticker: {p['ticker']}, Asset Class: {p['asset_class']}, Exposure: {p['exposure_pct']}%")
+def upsert_theme(payload: dict) -> str:
+    title = payload["title"]
+    region = payload.get("region") or ""
 
-print("\n=== Portfolio Risk Alerts ===")
-for alert in portfolio_risk['risk_alerts']:
-    print(f"- Theme: {alert['theme_id']}, Severity: {alert['severity']}, Trigger: {alert['trigger_reason']}")
-print("\n")
-
-# -------------------------
-# 5. Compute Overall Portfolio Risk (dynamic)
-# -------------------------
-overall_risk = 0.0
-for alert in portfolio_risk['risk_alerts']:
-    # Find corresponding theme
-    theme = next(t for t in themes_with_heat if t['theme_id'] == alert['theme_id'])
-    # Compute exposure to affected assets
-    exposure = sum(
-        asset["weight"] for asset in portfolio 
-        if asset["asset_class"] in theme['asset_classes']
+    existing = (
+        supabase.table("themes")
+        .select("theme_id")
+        .eq("title", title)
+        .eq("region", region)
+        .limit(1)
+        .execute()
+        .data
     )
-    overall_risk += exposure * theme['heat_score']
 
-# Scale to percentage for display (max heat ~2, max exposure ~1)
-max_possible_risk = len(portfolio_risk['risk_alerts']) * 2 * 1  # max heat * max exposure
-overall_risk_pct = round((overall_risk / max_possible_risk) * 100, 1)
+    if existing:
+        theme_id = existing[0]["theme_id"]
+        supabase.table("themes").update(payload).eq("theme_id", theme_id).execute()
+        return theme_id
 
-print(f"=== Overall Portfolio Risk (weighted placeholder) === {overall_risk_pct}%")
+    inserted = supabase.table("themes").insert(payload).execute().data
+    return inserted[0]["theme_id"]
+
+
+def seed_fake_themes() -> list[str]:
+    now = _iso_now()
+    fake_themes = [
+        {"title": "Rate Cuts", "heat_score": 88.0, "region": "US", "asset_classes": ["bonds", "equities"]},
+        {"title": "AI Capex", "heat_score": 73.0, "region": "US", "asset_classes": ["equities"]},
+        {"title": "Energy Shock", "heat_score": 66.0, "region": "GLOBAL", "asset_classes": ["commodities"]},
+        {"title": "Fiscal Risk", "heat_score": 54.0, "region": "US", "asset_classes": ["bonds"]},
+        {"title": "China Demand", "heat_score": 49.0, "region": "APAC", "asset_classes": ["equities", "commodities"]},
+        {"title": "Supply Chain", "heat_score": 44.0, "region": "GLOBAL", "asset_classes": ["equities"]},
+        {"title": "Bank Stress", "heat_score": 61.0, "region": "US", "asset_classes": ["bonds", "equities"]},
+        {"title": "Housing", "heat_score": 47.0, "region": "US", "asset_classes": ["real_estate"]},
+        {"title": "USD Strength", "heat_score": 52.0, "region": "GLOBAL", "asset_classes": ["fx"]},
+    ]
+
+    ids: list[str] = []
+    for theme in fake_themes:
+        payload = {
+            "title": theme["title"],
+            "description": "Seeded for frontend heat grid",
+            "status": "active",
+            "heat_score": float(theme["heat_score"]),
+            "asset_classes": theme["asset_classes"],
+            "region": theme["region"],
+            "first_seen_at": now,
+            "last_seen_at": now,
+        }
+        ids.append(upsert_theme(payload))
+
+    return ids
+
+
+def verify_top9() -> None:
+    rows = (
+        supabase.table("themes")
+        .select("title,heat_score,status")
+        .eq("status", "active")
+        .order("heat_score", desc=True)
+        .limit(9)
+        .execute()
+        .data
+    )
+
+    assert_true(len(rows) == 9, f"Expected 9 rows, got {len(rows)}")
+
+    scores = [float(r["heat_score"]) for r in rows]
+    assert_true(all(0.0 <= s <= 100.0 for s in scores), "Found heat_score outside 0-100")
+    assert_true(scores == sorted(scores, reverse=True), "Top-9 not sorted by heat_score desc")
+
+
+if __name__ == "__main__":
+    try:
+        ids = seed_fake_themes()
+        verify_top9()
+        print("PASS: seeded fake themes for frontend")
+        print(f"Seeded/updated theme_ids: {ids}")
+    except Exception as exc:
+        print(f"FAIL: {exc}")
+        sys.exit(1)
