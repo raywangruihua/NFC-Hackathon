@@ -71,7 +71,14 @@ def get_events(
 
 
 def insert_event(event: Event) -> JsonDict:
-    return cast(JsonDict, supabase.table("events").insert(vars(event)).execute().data[0])
+    result = cast(JsonDict, supabase.table("events").insert(vars(event)).execute().data[0])
+    # Auto-classify into themes (fire-and-forget)
+    try:
+        from analysislib.classify_events import classify_and_link_event
+        classify_and_link_event(result)
+    except Exception:
+        pass
+    return result
 
 
 # ── Themes ────────────────────────────────────────────────────────────────────
@@ -90,8 +97,9 @@ def get_theme_by_id(theme_id: str) -> JsonDict | None:
     return cast(JsonDict | None, result.data[0] if result.data else None)
 
 
-def insert_theme(theme: Theme) -> JsonDict:
-    return cast(JsonDict, supabase.table("themes").insert(vars(theme)).execute().data[0])
+def insert_theme(theme: "Theme | JsonDict") -> JsonDict:
+    data = vars(theme) if isinstance(theme, Theme) else theme
+    return cast(JsonDict, supabase.table("themes").insert(data).execute().data[0])
 
 
 def update_theme(theme_id: str, updates: JsonDict) -> JsonDict:
@@ -134,7 +142,43 @@ def get_events_for_theme(theme_id: str) -> list[JsonDict]:
     )
 
 
-# ── Portfolio exposure ────────────────────────────────────────────────────────
+def get_event_theme_links(event_id: str) -> list[str]:
+    """Return theme_ids already linked to an event (for dedup)."""
+    rows = (
+        supabase.table("event_theme_map")
+        .select("theme_id")
+        .eq("event_id", event_id)
+        .execute()
+        .data
+    )
+    return [r["theme_id"] for r in rows if isinstance(r, dict)]
+
+
+def get_unlinked_events(days: int = 7) -> list[JsonDict]:
+    """Return events from the last N days that have no entry in event_theme_map."""
+    from datetime import timedelta
+
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    all_events = cast(
+        list[JsonDict],
+        supabase.table("events")
+        .select("*")
+        .gte("published_at", since)
+        .order("published_at", desc=True)
+        .execute()
+        .data,
+    )
+
+    linked_rows = cast(
+        list[JsonDict],
+        supabase.table("event_theme_map")
+        .select("event_id")
+        .execute()
+        .data,
+    )
+    linked_ids = {r["event_id"] for r in linked_rows if isinstance(r, dict)}
+
+    return [e for e in all_events if e.get("event_id") not in linked_ids]
 
 def get_portfolio(user_id: str) -> list[JsonDict]:
     return (

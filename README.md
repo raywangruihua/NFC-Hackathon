@@ -249,7 +249,7 @@ pip install -r requirements.txt
 - **Ticker extraction** misses companies referenced by full name only (e.g. "U.S. Bancorp" without the `USB` symbol)
 - **FinBERT** was trained on short financial headlines — sentiment reliability degrades on long-form articles (>512 tokens are truncated)
 - **`published_at`** is null for a significant portion of ingested articles, defaulting recency score to 0.5
-- **`topic`** field is reserved for a future classifier and is always `null`
+- **`topic`** field is populated by the Gemini classifier at insertion time (see *Event-to-theme classification* below)
 ## Analysis layer
 
 ### Overview
@@ -267,6 +267,7 @@ Unlike the older draft, this layer is now wired for DB sync via `sync_themes.py`
 backend/src/analysislib/
 |-- __init__.py              
 |-- run_analysis.py          # entrypoint
+|-- classify_events.py       # Gemini-based event-to-theme classification
 |-- sync_themes.py           # recompute + upsert theme heat into DB
 |-- test.py                  # fake-data seed script for frontend testing
 |-- test_connection.py       # DB connectivity smoke test
@@ -325,15 +326,45 @@ Run seed script:
 python -m backend.src.analysislib.test
 ```
 
+### Event-to-theme classification (`classify_events.py`)
+
+Uses **Gemini 2.0 Flash** to classify each event into an existing theme or create a new one.
+
+**Closed-list classification** — the LLM always picks from the current theme list in the database, preventing synonym fragmentation (e.g. "US Inflation" vs "American Inflation Pressure"). A new theme is only created when no existing theme fits.
+
+**Auto-classification at insert time** — `insert_event()` automatically triggers `classify_and_link_event()` after inserting the event. This is fire-and-forget: if Gemini is unavailable, the event is still inserted and can be classified later via backfill.
+
+```python
+from analysislib.classify_events import classify_and_link_event, backfill_events
+
+# Classify a single event (called automatically by insert_event)
+classify_and_link_event(event_dict) -> list[str]  # returns linked theme_ids
+
+# Backfill all unlinked events from the last N days
+backfill_events(days=30) -> {"total": int, "linked": int, "new_themes": int, "skipped": int, "errors": int}
+```
+
+**Backfill endpoint:**
+```bash
+curl -X POST http://localhost:8000/api/classify-events?days=30
+```
+
+**Test with fake data:**
+```bash
+cd backend/src
+python seed_test_events.py  # inserts 10 diverse macro events
+```
+
 ### MVP status (analysis scope)
 
 Implemented:
 - End-to-end analysis flow behind one entrypoint.
 - Theme heat retrieval path for frontend (`/api/themes/hottest`).
+- Gemini-based event-to-theme classification with deduplication.
 - Fake-data seeding workflow for demo/testing.
 
 Still placeholder by design:
-- Rule-based theme grouping/scoring heuristics (not LLM-driven yet).
+- Rule-based theme grouping/scoring heuristics (heat_score uses simple heuristics).
 - Portfolio input is only as accurate as provided upstream portfolio data.
 - Advanced explanation/recommendation generation is not in this layer yet.
 
@@ -528,6 +559,12 @@ link_event_to_theme(event_id: str, theme_id: str) -> JsonDict
 
 # Get all events for a theme
 get_events_for_theme(theme_id: str) -> list[JsonDict]
+
+# Get theme_ids already linked to an event (for dedup)
+get_event_theme_links(event_id: str) -> list[str]
+
+# Get events from last N days with no theme link (for backfill)
+get_unlinked_events(days: int = 7) -> list[JsonDict]
 ```
 
 ### Memory Store

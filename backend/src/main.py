@@ -647,6 +647,26 @@ def get_news() -> Response:
     return jsonify({"articles": ranked[:limit]})
 
 
+@app.route("/api/classify-events", methods=["POST"])
+def classify_events():
+    """
+    Trigger Gemini classification for unlinked events.
+    Query params:
+        days – look-back window (default 30)
+    """
+    try:
+        days = int(request.args.get("days", "30"))
+    except (ValueError, TypeError):
+        days = 30
+
+    try:
+        from analysislib.classify_events import backfill_events
+        stats = backfill_events(days=days)
+        return jsonify(stats)
+    except Exception as exc:
+        return _json_error(f"Classification error: {exc}", 500)
+
+
 if __name__ == "__main__":
     app.run(port=8000, debug=True)
 
