@@ -46,15 +46,21 @@ Issues:
 - FRED
   - 'ism_manufacturing_pmi' and 'gold' series data not available
 
+  
 Webcrawler crawls news websites by searching key terms via the GDELT API. The crawler can be run via run_gdelt_spider()
 
 TODO: Find optimal search query terms for unbiased article crawling
+
+
+Stock market data is collected via Alpha Vantage endpoint.
+
+
 """
 
 #################### Economic Indicator Data API ####################
 
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Literal
 
 import requests
 from dotenv import load_dotenv
@@ -312,7 +318,7 @@ def test_fred() -> None:
             print(f"{indicator} {status}")
 
 
-############################# webcrawler #############################
+############################# Webcrawler #############################
 
 from scrapy.crawler import CrawlerProcess
 from scrapy.settings import SETTINGS_PRIORITIES
@@ -338,7 +344,7 @@ def run_gdelt_spider(
         output: Output scraped data to gdelt_spider_output.json in current directory.
         language: Source language filter for GDELT (default: "english").
     """
-    if isinstance(query_terms, List):
+    if isinstance(query_terms, list):
         quoted = []
         for term in query_terms:
             if " " in term:
@@ -379,6 +385,205 @@ def run_gdelt_spider(
     process = CrawlerProcess(settings)
     process.crawl(GdeltSpider)
     process.start()
+
+
+####################### Stock Market Data API #######################
+
+ALPHA_VANTAGE_BASE_URL = "https://www.alphavantage.co/query?"
+ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
+
+AlphaVantageFunction = Literal[
+    "TIME_SERIES_INTRADAY",
+    "TIME_SERIES_DAILY",
+    "TIME_SERIES_DAILY_ADJUSTED",
+    "TIME_SERIES_WEEKLY",
+    "TIME_SERIES_WEEKLY_ADJUSTED",
+    "TIME_SERIES_MONTHLY",
+    "TIME_SERIES_MONTHLY_ADJUSTED",
+    "GLOBAL_QUOTE",
+    "SYMBOL_SEARCH"
+]
+
+
+def _assert_alpha_vantage_api_key() -> None:
+    """
+    Check for Alpha Vantage API key.
+    """
+    if not ALPHA_VANTAGE_API_KEY:
+        raise RuntimeError("ALPHA_VANTAGE_API_KEY is not set.")
+
+
+def _request_alpha_vantage(
+    function: AlphaVantageFunction,
+    symbol: Optional[str] = None,
+    interval: Optional[Literal["1min", "5min", "15min", "30min", "60min"]] = None,
+    adjusted: Optional[bool] = None,
+    extended_hours: Optional[bool] = None,
+    month: Optional[str] = None,
+    outputsize: Optional[Literal["compact", "full"]] = None,
+    datatype: Optional[Literal["json", "csv"]] = None,
+    entitlement: Optional[Literal["realtime", "delayed"]] = None,
+    keywords: Optional[str] = None
+) -> Dict:
+    """
+    Send request to Alpha Vantage endpoint.
+    """
+    _assert_alpha_vantage_api_key()
+
+    params = {
+        "function": function,
+        "apikey": ALPHA_VANTAGE_API_KEY,
+    }
+
+    if symbol:
+        params["symbol"] = symbol.upper()
+
+    if keywords:
+        params["keywords"] = keywords
+
+    if interval is not None:
+        params["interval"] = interval
+
+    if adjusted is not None:
+        params["adjusted"] = adjusted
+
+    if extended_hours is not None:
+        params["extended_hours"] = extended_hours
+
+    if month:
+        params["month"] = month
+
+    if outputsize:
+        params["outputsize"] = outputsize
+
+    if datatype:
+        params["datatype"] = datatype
+
+    if entitlement:
+        params["entitlement"] = entitlement
+
+    resp = requests.get(ALPHA_VANTAGE_BASE_URL, params=params, timeout=REQUEST_TIMEOUT)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_alpha_vantage_time_series_intraday(
+    symbol: str,
+    interval: Literal["1min", "5min", "15min", "30min", "60min"] = "5min",
+    adjusted: Optional[bool] = None,
+    extended_hours: Optional[bool] = None,
+    month: Optional[str] = None,
+    outputsize: Optional[Literal["compact", "full"]] = None,
+    datatype: Optional[Literal["json", "csv"]] = None,
+    entitlement: Optional[Literal["realtime", "delayed"]] = None,
+) -> Dict:
+    return _request_alpha_vantage(
+        function="TIME_SERIES_INTRADAY",
+        symbol=symbol,
+        interval=interval,
+        adjusted=adjusted,
+        extended_hours=extended_hours,
+        month=month,
+        outputsize=outputsize,
+        datatype=datatype,
+        entitlement=entitlement,
+    )
+
+
+def get_alpha_vantage_time_series_daily(
+    symbol: str,
+    outputsize: Optional[Literal["compact", "full"]] = None,
+    datatype: Optional[Literal["json", "csv"]] = None,
+    entitlement: Optional[Literal["realtime", "delayed"]] = None,
+) -> Dict:
+    return _request_alpha_vantage(
+        function="TIME_SERIES_DAILY",
+        symbol=symbol,
+        outputsize=outputsize,
+        datatype=datatype,
+        entitlement=entitlement,
+    )
+
+
+def get_alpha_vantage_time_series_daily_adjusted(
+    symbol: str,
+    outputsize: Optional[Literal["compact", "full"]] = None,
+    datatype: Optional[Literal["json", "csv"]] = None,
+    entitlement: Optional[Literal["realtime", "delayed"]] = None,
+) -> Dict:
+    return _request_alpha_vantage(
+        function="TIME_SERIES_DAILY_ADJUSTED",
+        symbol=symbol,
+        outputsize=outputsize,
+        datatype=datatype,
+        entitlement=entitlement,
+    )
+
+
+def get_alpha_vantage_time_series_weekly(
+    symbol: str,
+    datatype: Optional[Literal["json", "csv"]] = None,
+) -> Dict:
+    return _request_alpha_vantage(
+        function="TIME_SERIES_WEEKLY",
+        symbol=symbol,
+        datatype=datatype,
+    )
+
+
+def get_alpha_vantage_time_series_weekly_adjusted(
+    symbol: str,
+    datatype: Optional[Literal["json", "csv"]] = None,
+) -> Dict:
+    return _request_alpha_vantage(
+        function="TIME_SERIES_WEEKLY_ADJUSTED",
+        symbol=symbol,
+        datatype=datatype,
+    )
+
+
+def get_alpha_vantage_time_series_monthly(
+    symbol: str,
+    datatype: Optional[Literal["json", "csv"]] = None,
+) -> Dict:
+    return _request_alpha_vantage(
+        function="TIME_SERIES_MONTHLY",
+        symbol=symbol,
+        datatype=datatype,
+    )
+
+
+def get_alpha_vantage_time_series_monthly_adjusted(
+    symbol: str,
+    datatype: Optional[Literal["json", "csv"]] = None,
+) -> Dict:
+    return _request_alpha_vantage(
+        function="TIME_SERIES_MONTHLY_ADJUSTED",
+        symbol=symbol,
+        datatype=datatype,
+    )
+
+
+def get_alpha_vantage_global_quote(
+    symbol: str,
+    datatype: Optional[Literal["json", "csv"]] = None,
+) -> Dict:
+    return _request_alpha_vantage(
+        function="GLOBAL_QUOTE",
+        symbol=symbol,
+        datatype=datatype,
+    )
+
+
+def get_alpha_vantage_symbol_search(
+    keywords: str,
+    datatype: Optional[Literal["json", "csv"]] = None,
+) -> Dict:
+    return _request_alpha_vantage(
+        function="SYMBOL_SEARCH",
+        keywords=keywords,
+        datatype=datatype,
+    )
 
 
 if __name__ == "__main__":

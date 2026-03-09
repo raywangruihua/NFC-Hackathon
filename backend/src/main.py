@@ -7,6 +7,14 @@ from flask_cors import CORS
 from dotenv import load_dotenv
 
 from datalib.datalib import (
+    get_alpha_vantage_symbol_search,
+    get_alpha_vantage_time_series_daily,
+    get_alpha_vantage_time_series_daily_adjusted,
+    get_alpha_vantage_time_series_intraday,
+    get_alpha_vantage_time_series_monthly,
+    get_alpha_vantage_time_series_monthly_adjusted,
+    get_alpha_vantage_time_series_weekly,
+    get_alpha_vantage_time_series_weekly_adjusted,
     get_fred_indicator_data,
     list_fred_categories,
     list_fred_indicators,
@@ -47,6 +55,35 @@ LABEL_TOKEN_MAP = {
     "mom": "MoM",
 }
 
+# Placeholder news scroller articles
+EXAMPLE_NEWS_ARTICLES = [
+    {
+        "id": "us-cpi-cools",
+        "title": "US Core CPI Cools for a Second Month",
+        "description": "Core inflation eased slightly, reinforcing expectations for a gradual policy pivot.",
+    },
+    {
+        "id": "fed-minutes",
+        "title": "Fed Minutes Signal Data-Dependent Approach",
+        "description": "Officials flagged resilient services inflation and reiterated a cautious easing path.",
+    },
+    {
+        "id": "oil-supply",
+        "title": "Oil Gains on Fresh Supply Concerns",
+        "description": "Crude prices moved higher after renewed disruptions increased near-term supply risk.",
+    },
+    {
+        "id": "tech-guidance",
+        "title": "Mega-Cap Tech Guidance Mixed into Q2",
+        "description": "Cloud and AI capex remained strong, while margin outlooks diverged by company.",
+    },
+    {
+        "id": "jobs-surprise",
+        "title": "Payrolls Beat Forecasts, Wage Growth Stable",
+        "description": "Labor data stayed firm, supporting a soft-landing narrative despite rate uncertainty.",
+    },
+]
+
 
 def _format_label_token(token: str) -> str:
     lowered = token.lower()
@@ -79,7 +116,248 @@ def _normalize_observations(raw: Dict[str, Any]) -> list[Dict[str, Any]]:
     return normalized
 
 
-@app.get("/api/fred/categories")
+def _parse_bool(value: str | None) -> bool | None:
+    if value is None:
+        return None
+    lowered = value.strip().lower()
+    if lowered in {"1", "true", "yes", "y"}:
+        return True
+    if lowered in {"0", "false", "no", "n"}:
+        return False
+    raise ValueError(f"Invalid boolean value: {value}")
+
+
+def _json_error(message: str, status_code: int = 400) -> Response:
+    response = jsonify({"error": message})
+    response.status_code = status_code
+    return response
+
+
+############################# Endpoints #############################
+
+@app.get("/api/market/symbol-search")
+def get_symbol_search() -> Response:
+    """
+    Search ticker symbols and return autocomplete-friendly results.
+    """
+    keywords = request.args.get("keywords", "").strip()
+    if not keywords:
+        return _json_error("Missing required query parameter: keywords")
+
+    limit_raw = request.args.get("limit")
+    try:
+        limit = int(limit_raw) if limit_raw else 8
+    except ValueError:
+        limit = 8
+
+    limit = max(1, min(limit, 20))
+
+    try:
+        payload = get_alpha_vantage_symbol_search(
+            keywords=keywords,
+            datatype=request.args.get("datatype"),
+        )
+        best_matches = payload.get("bestMatches", [])
+        matches: list[Dict[str, Any]] = []
+        for row in best_matches:
+            if not isinstance(row, dict):
+                continue
+            symbol = row.get("1. symbol")
+            name = row.get("2. name")
+            if not symbol or not name:
+                continue
+
+            matches.append(
+                {
+                    "symbol": symbol,
+                    "name": name,
+                    "type": row.get("3. type"),
+                    "region": row.get("4. region"),
+                    "market_open": row.get("5. marketOpen"),
+                    "market_close": row.get("6. marketClose"),
+                    "timezone": row.get("7. timezone"),
+                    "currency": row.get("8. currency"),
+                }
+            )
+    except ValueError as exc:
+        return _json_error(str(exc))
+    except RuntimeError as exc:
+        return _json_error(str(exc), status_code=500)
+
+    return jsonify(
+        {
+            "keywords": keywords,
+            "matches": matches[:limit],
+            "count": len(matches),
+        }
+    )
+
+
+@app.get("/api/market/time-series/intraday")
+def get_time_series_intraday() -> Response:
+    """
+    Return intraday stock time series from Alpha Vantage.
+    """
+    symbol = request.args.get("symbol")
+    if not symbol:
+        return _json_error("Missing required query parameter: symbol")
+
+    try:
+        payload = get_alpha_vantage_time_series_intraday(
+            symbol=symbol,
+            interval=request.args.get("interval", "5min"),
+            adjusted=_parse_bool(request.args.get("adjusted")),
+            extended_hours=_parse_bool(request.args.get("extended_hours")),
+            month=request.args.get("month"),
+            outputsize=request.args.get("outputsize"),
+            datatype=request.args.get("datatype"),
+            entitlement=request.args.get("entitlement"),
+        )
+    except ValueError as exc:
+        return _json_error(str(exc))
+    except RuntimeError as exc:
+        return _json_error(str(exc), status_code=500)
+
+    return jsonify(payload)
+
+
+@app.get("/api/market/time-series/daily")
+def get_time_series_daily() -> Response:
+    """
+    Return daily stock time series from Alpha Vantage.
+    """
+    symbol = request.args.get("symbol")
+    if not symbol:
+        return _json_error("Missing required query parameter: symbol")
+
+    try:
+        payload = get_alpha_vantage_time_series_daily(
+            symbol=symbol,
+            outputsize=request.args.get("outputsize"),
+            datatype=request.args.get("datatype"),
+            entitlement=request.args.get("entitlement"),
+        )
+    except ValueError as exc:
+        return _json_error(str(exc))
+    except RuntimeError as exc:
+        return _json_error(str(exc), status_code=500)
+
+    return jsonify(payload)
+
+
+@app.get("/api/market/time-series/daily-adjusted")
+def get_time_series_daily_adjusted() -> Response:
+    """
+    Return adjusted daily stock time series from Alpha Vantage.
+    """
+    symbol = request.args.get("symbol")
+    if not symbol:
+        return _json_error("Missing required query parameter: symbol")
+
+    try:
+        payload = get_alpha_vantage_time_series_daily_adjusted(
+            symbol=symbol,
+            outputsize=request.args.get("outputsize"),
+            datatype=request.args.get("datatype"),
+            entitlement=request.args.get("entitlement"),
+        )
+    except ValueError as exc:
+        return _json_error(str(exc))
+    except RuntimeError as exc:
+        return _json_error(str(exc), status_code=500)
+
+    return jsonify(payload)
+
+
+@app.get("/api/market/time-series/weekly")
+def get_time_series_weekly() -> Response:
+    """
+    Return weekly stock time series from Alpha Vantage.
+    """
+    symbol = request.args.get("symbol")
+    if not symbol:
+        return _json_error("Missing required query parameter: symbol")
+
+    try:
+        payload = get_alpha_vantage_time_series_weekly(
+            symbol=symbol,
+            datatype=request.args.get("datatype"),
+        )
+    except ValueError as exc:
+        return _json_error(str(exc))
+    except RuntimeError as exc:
+        return _json_error(str(exc), status_code=500)
+
+    return jsonify(payload)
+
+
+@app.get("/api/market/time-series/weekly-adjusted")
+def get_time_series_weekly_adjusted() -> Response:
+    """
+    Return adjusted weekly stock time series from Alpha Vantage.
+    """
+    symbol = request.args.get("symbol")
+    if not symbol:
+        return _json_error("Missing required query parameter: symbol")
+
+    try:
+        payload = get_alpha_vantage_time_series_weekly_adjusted(
+            symbol=symbol,
+            datatype=request.args.get("datatype"),
+        )
+    except ValueError as exc:
+        return _json_error(str(exc))
+    except RuntimeError as exc:
+        return _json_error(str(exc), status_code=500)
+
+    return jsonify(payload)
+
+
+@app.get("/api/market/time-series/monthly")
+def get_time_series_monthly() -> Response:
+    """
+    Return monthly stock time series from Alpha Vantage.
+    """
+    symbol = request.args.get("symbol")
+    if not symbol:
+        return _json_error("Missing required query parameter: symbol")
+
+    try:
+        payload = get_alpha_vantage_time_series_monthly(
+            symbol=symbol,
+            datatype=request.args.get("datatype"),
+        )
+    except ValueError as exc:
+        return _json_error(str(exc))
+    except RuntimeError as exc:
+        return _json_error(str(exc), status_code=500)
+
+    return jsonify(payload)
+
+
+@app.get("/api/market/time-series/monthly-adjusted")
+def get_time_series_monthly_adjusted() -> Response:
+    """
+    Return adjusted monthly stock time series from Alpha Vantage.
+    """
+    symbol = request.args.get("symbol")
+    if not symbol:
+        return _json_error("Missing required query parameter: symbol")
+
+    try:
+        payload = get_alpha_vantage_time_series_monthly_adjusted(
+            symbol=symbol,
+            datatype=request.args.get("datatype"),
+        )
+    except ValueError as exc:
+        return _json_error(str(exc))
+    except RuntimeError as exc:
+        return _json_error(str(exc), status_code=500)
+
+    return jsonify(payload)
+
+
+@app.get("/api/macroeconomic/categories")
 def get_fred_categories() -> Response:
     """
     Return all categories available for the country chosen.
@@ -97,7 +375,7 @@ def get_fred_categories() -> Response:
     )
 
 
-@app.get("/api/fred/indicators")
+@app.get("/api/macroeconomic/indicators")
 def get_fred_indicators() -> Response:
     """
     Return all indicators that fall under the category requested.
@@ -115,7 +393,7 @@ def get_fred_indicators() -> Response:
     )
 
 
-@app.get("/api/fred/series")
+@app.get("/api/macroeconomic/series")
 def get_fred_series() -> Response:
     """
     Return series data for indicator requested.
@@ -166,6 +444,22 @@ def get_fred_series() -> Response:
             },
         }
     )
+
+
+@app.get("/api/news")
+def get_news() -> Response:
+    """
+    Return news articles.
+    TODO: Get news articles from database (raw)
+    """
+    limit_raw = request.args.get("limit")
+    try:
+        limit = int(limit_raw) if limit_raw else len(EXAMPLE_NEWS_ARTICLES)
+    except ValueError:
+        limit = len(EXAMPLE_NEWS_ARTICLES)
+
+    limit = max(1, min(limit, len(EXAMPLE_NEWS_ARTICLES)))
+    return jsonify({"articles": EXAMPLE_NEWS_ARTICLES[:limit]})
 
 
 if __name__ == "__main__":

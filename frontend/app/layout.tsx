@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Macro Command | NFC Hackathon MVP"
+  title: "Dammit Finance Manager"
 };
 
 export default function RootLayout({
