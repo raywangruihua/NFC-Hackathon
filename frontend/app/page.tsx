@@ -7,6 +7,7 @@ import {
   Bot,
   ChartCandlestick,
   Earth,
+  History,
   Thermometer,
 } from "lucide-react";
 import styles from "./page.module.css";
@@ -1005,6 +1006,12 @@ export default function Home() {
               <a href="#macro-indicators" className={`${styles.moduleItem} ${styles.moduleLink}`}>
                 <Earth className={styles.moduleIcon} aria-hidden />
                 <span>Macro Indicators</span>
+              </a>
+            </li>
+            <li>
+              <a href="/timeline" className={`${styles.moduleItem} ${styles.moduleLink}`}>
+                <History className={styles.moduleIcon} aria-hidden />
+                <span>Timelines</span>
               </a>
             </li>
             <li>
