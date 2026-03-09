@@ -1,7 +1,7 @@
 import os
 import re
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from typing import Any, Dict
 
 from flask import Flask, jsonify, request, Response
@@ -27,7 +27,7 @@ load_dotenv()
 FRONT_END_SERVER = os.getenv("FRONT_END_SERVER")
 
 app = Flask(__name__)
-CORS(app, origins=ALLOWED_FRONTEND_ORIGINS)
+CORS(app, origins=FRONT_END_SERVER)
 
 
 ########################## Helper functions ##########################
@@ -129,7 +129,7 @@ def _parse_iso_date(value: str | None, field_name: str) -> date | None:
     if value is None or value.strip() == "":
         return None
     try:
-        return date.fromisoformat(value.strip())
+        return datetime.fromisoformat(value.strip())
     except ValueError as exc:
         raise ValueError(f"Invalid {field_name}. Use YYYY-MM-DD.") from exc
 
