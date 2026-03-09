@@ -1,11 +1,14 @@
 import os
 import re
-from datetime import date
+import math
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
+from databaselib.db import get_active_themes, get_events
+
 
 from datalib.datalib import (
     get_alpha_vantage_symbol_search,
@@ -22,18 +25,6 @@ from datalib.datalib import (
 
 load_dotenv()
 FRONT_END_SERVER = os.getenv("FRONT_END_SERVER")
-DEFAULT_FRONTEND_ORIGINS = [
-    r"http://localhost(:\d+)?",
-    r"http://127\.0\.0\.1(:\d+)?",
-]
-ENV_FRONTEND_ORIGINS = [
-    origin.strip()
-    for origin in (FRONT_END_SERVER or "").split(",")
-    if origin.strip()
-]
-ALLOWED_FRONTEND_ORIGINS = ENV_FRONTEND_ORIGINS + [
-    origin for origin in DEFAULT_FRONTEND_ORIGINS if origin not in ENV_FRONTEND_ORIGINS
-]
 
 app = Flask(__name__)
 CORS(app, origins=ALLOWED_FRONTEND_ORIGINS)
@@ -486,22 +477,97 @@ def get_macro_series() -> Response:
         }
     )
 
+@app.get("/api/themes/hottest")
+def get_hottest_themes() -> Response:
+    """
+    Return top N active themes ordered by heat score descending.
+    Default limit is 9 for frontend heat grid.
+    """
+    limit_raw = request.args.get("limit", "9")
+    try:
+        limit = max(1, min(int(limit_raw), 50))
+    except ValueError:
+        limit = 9
+
+    themes = get_active_themes()
+    top_themes = themes[:limit]
+
+    return jsonify(
+        [
+            {
+                "topic": theme.get("title", "Unknown"),
+                "score": float(theme.get("heat_score") or 0.0),
+                "region": theme.get("region"),
+                "asset_classes": theme.get("asset_classes") or [],
+                "status": theme.get("status"),
+            }
+            for theme in top_themes
+        ]
+    )
 
 @app.get("/api/news")
 def get_news() -> Response:
     """
-    Return news articles.
-    TODO: Get news articles from database (raw)
+    Return recent news articles ranked by recency-weighted importance.
+    Falls back to placeholders if DB events are unavailable.
     """
     limit_raw = request.args.get("limit")
     try:
-        limit = int(limit_raw) if limit_raw else len(EXAMPLE_NEWS_ARTICLES)
+        limit = int(limit_raw) if limit_raw else 8
     except ValueError:
-        limit = len(EXAMPLE_NEWS_ARTICLES)
+        limit = 8
 
-    limit = max(1, min(limit, len(EXAMPLE_NEWS_ARTICLES)))
-    return jsonify({"articles": EXAMPLE_NEWS_ARTICLES[:limit]})
+    limit = max(1, min(limit, 20))
+
+    try:
+        events = get_events(days=7)
+    except Exception:
+        events = []
+
+    now = datetime.now(timezone.utc)
+    ranked: list[Dict[str, Any]] = []
+
+    for event in events:
+        published_at = event.get("published_at")
+        if not published_at:
+            continue
+
+        try:
+            published_dt = datetime.fromisoformat(str(published_at).replace("Z", "+00:00"))
+            age_hours = max((now - published_dt).total_seconds() / 3600, 0.0)
+            recency_score = math.exp(-age_hours / 24.0)
+        except Exception:
+            recency_score = 0.0
+
+        try:
+            importance_score = float(event.get("importance_score") or 0.0)
+        except Exception:
+            importance_score = 0.0
+        importance_score = max(0.0, min(1.0, importance_score))
+
+        weighted_score = 0.7 * recency_score + 0.3 * importance_score
+
+        title = event.get("title") or event.get("topic") or "Market Update"
+        content = str(event.get("content") or "").strip()
+        description = content[:220] if content else "No summary available."
+
+        ranked.append(
+            {
+                "id": str(event.get("event_id") or f"{title}-{published_at}"),
+                "title": str(title),
+                "description": description,
+                "score": round(weighted_score, 4),
+            }
+        )
+
+    if not ranked:
+        return jsonify({"articles": EXAMPLE_NEWS_ARTICLES[: min(limit, len(EXAMPLE_NEWS_ARTICLES))]})
+
+    ranked.sort(key=lambda item: item["score"], reverse=True)
+    return jsonify({"articles": ranked[:limit]})
 
 
 if __name__ == "__main__":
     app.run(port=8000, debug=True)
+
+

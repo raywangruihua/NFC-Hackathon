@@ -1,4 +1,6 @@
-# test_connection.py
+# backend/analysislib/test_connection.py
+
+# this script verifies database connection
 import os
 from dotenv import load_dotenv
 from supabase import create_client, Client

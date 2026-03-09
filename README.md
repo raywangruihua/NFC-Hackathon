@@ -253,147 +253,89 @@ pip install -r requirements.txt
 ## Analysis layer
 
 ### Overview
-**READ**
-`analysislib` handles event aggregation, market impact, and portfolio risk. **Database storage is not yet active**, so the pipeline runs in-memory.
+`analysislib` is the analysis pipeline for turning enriched events into:
+- grouped macro themes,
+- theme heat scores (0-100),
+- market impact summaries,
+- optional portfolio risk alerts.
 
-The analysis layer classifies events into themes, calculates heat scores for each of them, generates market impact and evaluates user portfolios based on that result. 
+Unlike the older draft, this layer is now wired for DB sync via `sync_themes.py`, and has a single public entrypoint for other teams: `run_analysis(...)`.
 
-The module is functional locally with **placeholder classification logic** and can be executed end-to-end currently with **example data** due to current lack of stateful portfolio representation.
+### Current folder structure
 
+```text
+backend/src/analysislib/
+|-- __init__.py              
+|-- run_analysis.py          # entrypoint
+|-- sync_themes.py           # recompute + upsert theme heat into DB
+|-- test.py                  # fake-data seed script for frontend testing
+|-- test_connection.py       # DB connectivity smoke test
+|-- logic/
+    |-- macro_themes.py
+    |-- heat_score.py
+    |-- market_impact.py
+    |-- portfolio_analysis.py
 ```
-analysislib/
-├── __init__.py               
-├── macro_themes.py                   
-├── heat_score.py           
-├── market_impact.py                      
-├── portfolio_analysis.py     
-├── test_connection.py      # Test harness for database connection
-└── test.py                 # Test harness for analysis pipeline
-```
 
-### Pipeline Flow
----
+### Entrypoint contract (`run_analysis`)
 
-1. **Event Input** – Load enriched article JSON.  
-2. **Theme Grouping** (`macro_themes.py`) – Cluster related events.  
-3. **Heat Score** (`heat_score.py`) – Calculate numeric activity score per theme.  
-4. **Market Impact** (`market_impact.py`) – Generate impact direction and affected assets.  
-5. **Portfolio Analysis** (`portfolio_analysis.py`) – Compare portfolio against theme impacts and produce risk alerts.  
+Input:
+- `events: list[dict]` (required)
+- `user_id: str | None` (optional)
+- `portfolio: list[dict] | None` (optional)
 
+Minimal event fields expected:
+- `topic` (str)
+- `asset_classes` (list[str])
+- `importance_score` (number)
+- `sentiment` (`risk-on` | `risk-off` | `neutral`)
+- `published_at` (ISO datetime string)
+- `region` (optional)
 
-**Note:** Storage function does not yet exist; outputs remain in-memory.
+Output:
+- `themes`
+- `market_impacts`
+- `portfolio_risk` (or `None` if no portfolio input)
+- `summary` (`events_input`, `themes_count`, `impacts_count`, `alerts_count`)
 
-### Modules
----
-### `macro_themes.py`
-Groups enriched events into themes based on topic and timing.
-
-- **Themes** — clusters of related events, grouped by topic similarity and temporal proximity.
-- **Event assignment** — each event is assigned to an existing theme or starts a new theme if no suitable match is found.
+Example usage:
 
 ```python
-from analysislib.macro_themes import group_events_into_themes
+from backend.src.analysislib import run_analysis
 
-example_events = [
-    {"event_id": "uuid1", "topic": "inflation", "asset_classes": ["bonds"], "importance_score": 0.5, "sentiment": "risk-off", "published_at": "2026-03-04T10:00:00Z"},
-    {"event_id": "uuid2", "topic": "inflation", "asset_classes": ["equities"], "importance_score": 0.7, "sentiment": "risk-off", "published_at": "2026-03-04T11:00:00Z"}
-]
-
-themes = group_events_into_themes(example_events)
-# → [{"title": "inflation", "events": [...], "first_seen_at": "...", "last_seen_at": "..."}]
+result = run_analysis(events=my_events, user_id="user-123", portfolio=my_portfolio)
+print(result["summary"])
 ```
 
-### `heat_score.py`
-Calculates heat scores for each theme based on event importance and frequency.
+### Pipeline flow
 
-- **Heat Score** — numeric value representing how active/relevant a theme is.
-- **Factors** — includes number of events, sum of importance scores, and recency of events.
-- **Output** — updates the theme dict with `heat_score` and retains asset class info.
+1. Group events into themes (`logic/macro_themes.py`)
+2. Score heat per theme (`logic/heat_score.py`)
+3. Generate market impact (`logic/market_impact.py`)
+4. Optionally evaluate portfolio risk (`logic/portfolio_analysis.py`)
 
-```python
-from analysislib.heat_score import calculate_theme_heat
+### DB sync and frontend seeding
 
-themes_with_heat = calculate_theme_heat(themes)
-# → [{"title": "inflation", "heat_score": 0.75, "asset_classes": ["bonds", "equities"]}]
+- `sync_themes.py` is the production-facing bridge to store active themes and heat scores in the `themes` table.
+- `test.py` seeds fake data through `run_analysis(...)` and upserts into `themes` for frontend testing.
+
+Run seed script:
+
+```bash
+python -m backend.src.analysislib.test
 ```
 
-### `market_impact.py`
-Generates market impact summaries for macroeconomic themes.
+### MVP status (analysis scope)
 
-- **Direction** — determines if the market impact is `risk-on` or `risk-off` based on aggregated theme sentiment.
-- **Affected Assets** — identifies which asset classes (e.g., bonds, equities, commodities) are influenced by each theme.
-- **Purpose** — provides a concise view of which markets may be affected and in what direction, supporting portfolio risk analysis.
-- **Output** — a list of dicts, each containing:
-  - `theme_name`: human-readable theme title
-  - `heat_score`: numeric activity/relevance metric
-  - `direction`: `risk-on` or `risk-off`
-  - `affected_assets`: list of impacted asset classes
+Implemented:
+- End-to-end analysis flow behind one entrypoint.
+- Theme heat retrieval path for frontend (`/api/themes/hottest`).
+- Fake-data seeding workflow for demo/testing.
 
-```python
-from analysislib.market_impact import generate_market_impact
-
-# Example usage:
-market_summary = generate_market_impact(themes_with_heat)
-# → [
-#     {
-#         "theme_name": "inflation",
-#         "heat_score": 0.75,
-#         "direction": "risk-off",
-#         "affected_assets": ["bonds", "equities"]
-#     },
-#     {
-#         "theme_name": "interest rate",
-#         "heat_score": 0.9,
-#         "direction": "risk-off",
-#         "affected_assets": ["bonds"]
-#     }
-# ]
-```
-
-### `portfolio_analysis.py`
-Analyzes a user's portfolio exposure relative to market themes and identifies risk alerts.
-
-- **User ID** — the portfolio is associated with a unique user identifier.
-- **Portfolio Exposure** — evaluates holdings per asset class and ticker.
-- **Risk Alerts** — generates alerts when a theme impacts assets in the portfolio, with severity and trigger reason.
-- **Overall Risk** — aggregates all alerts to give an overall portfolio risk percentage and level (Low, Medium, High).
-
-**Output** — a dictionary containing:
-  - `risk_alerts`: list of alerts with fields:
-    - `theme_id`: linked theme UUID
-    - `severity`: Low / Medium / High
-    - `trigger_reason`: explanation for why the alert was triggered
-  - `overall_risk`: numeric percentage (0–100%)
-  - `overall_risk_level`: human-readable risk level
-
-```python
-from analysislib.portfolio_analysis import analyze_portfolio_risk
-
-user_id = "123e4567-e89b-12d3-a456-426614174000"
-portfolio = [
-    {"ticker": "AAPL", "asset_class": "equities", "weight": 0.4},
-    {"ticker": "US10Y", "asset_class": "bonds", "weight": 0.25},
-]
-
-market_summary = [
-    {"theme_name": "inflation", "heat_score": 0.75, "direction": "risk-off", "affected_assets": ["bonds", "equities"]}
-]
-
-portfolio_risk = analyze_portfolio_risk(user_id, market_summary, portfolio)
-
-# → {
-#       "risk_alerts": [
-#           {
-#               "theme_id": "33a1bbfb-4683-4c0d-88e7-077d250077d2",
-#               "severity": "High",
-#               "trigger_reason": "100% of your portfolio is exposed to risk-off assets affected by inflation."
-#           }
-#       ],
-#       "overall_risk": 100.0,
-#       "overall_risk_level": "High"
-#   }
-```
-
+Still placeholder by design:
+- Rule-based theme grouping/scoring heuristics (not LLM-driven yet).
+- Portfolio input is only as accurate as provided upstream portfolio data.
+- Advanced explanation/recommendation generation is not in this layer yet.
 
 ## Storage
 
@@ -467,6 +409,13 @@ Info on articles that have been ingested to storage. Contains both processed and
 
 Many-to-many link between events and themes. One event can belong to multiple
 themes.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| id | uuid | Primary key |
+| event_id | uuid | Foreign key to events |
+| theme_id | uuid | Foreign key to events |
+| created_at | timestamptz | Time row was created |
 
 ### `portfolio_exposure`
 

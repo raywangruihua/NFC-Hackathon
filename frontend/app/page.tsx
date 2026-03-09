@@ -126,7 +126,8 @@ type AlertRule = {
   detail: string;
 };
 
-const API_BASE_URL = (process.env.NEXT_PUBLIC_BACKEND_BASE_URL ?? "").replace(/\/$/, "");
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_BACKEND_BASE_URL
 const MAX_MACRO_GRAPHS = 8;
 const MAX_MARKET_GRAPHS = 8;
 const NEWS_ROTATE_MS = 6000;
@@ -183,6 +184,7 @@ const timelineEvents: TimelineEvent[] = [
 ];
 
 // Placeholder theme heat data
+/*
 const heatCells: HeatCell[] = [
   { topic: "Rate Cuts", score: 4 },
   { topic: "AI Capex", score: 10 },
@@ -194,6 +196,8 @@ const heatCells: HeatCell[] = [
   { topic: "Housing", score: 70 },
   { topic: "USD Strength", score: 9110 },
 ];
+*/
+
 
 // Placeholder chatbot example 
 const chatMessages: ChatMessage[] = [
@@ -618,6 +622,10 @@ export default function Home() {
   const [macroCards, setMacroCards] = useState<MacroSeriesCard[]>([]);
   const [macroLoading, setMacroLoading] = useState(false);
   const [macroError, setMacroError] = useState<string | null>(null);
+
+  const [heatCells, setHeatCells] = useState<HeatCell[]>([]);
+  const [heatLoading, setHeatLoading] = useState(false);
+  const [heatError, setHeatError] = useState<string | null>(null);
   const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([]);
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
@@ -731,7 +739,7 @@ export default function Home() {
       window.clearTimeout(timeoutId);
     };
   }, [marketSymbolInput]);
-
+  
   // Country selection drop down menu
   useEffect(() => {
     const controller = new AbortController();
@@ -809,6 +817,44 @@ export default function Home() {
     void loadIndicators();
     return () => controller.abort();
   }, [selectedCategory]);
+
+  
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadHottestThemes() {
+      setHeatLoading(true);
+      setHeatError(null);
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/themes/hottest?limit=9`, {
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to load hottest themes.");
+        }
+
+        const data = (await response.json()) as Array<{ topic: string; score: number }>;
+        const normalized = data.map((item) => ({
+          topic: item.topic,
+          score: Math.max(0, Math.min(100, Number(item.score) || 0)),
+        }));
+
+        setHeatCells(normalized);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setHeatCells([]);
+        setHeatError("Unable to load theme heat data.");
+      } finally {
+        setHeatLoading(false);
+      }
+    }
+
+    void loadHottestThemes();
+    return () => controller.abort();
+  }, []);
 
   // Indicator selection drop down menu
   const handleIndicatorSelect = (event: ChangeEvent<HTMLSelectElement>) => {
@@ -1400,18 +1446,25 @@ export default function Home() {
                 </span>
               </div>
 
-              <div className={styles.heatGrid}>
-                {heatCells.map((cell) => (
-                  <div
-                    key={cell.topic}
-                    className={styles.heatCell}
-                    style={heatToneStyle(cell.score)}
-                  >
-                    <p className={styles.heatTopic}>{cell.topic}</p>
-                    <p className={styles.heatScore}>{cell.score}</p>
-                  </div>
-                ))}
-              </div>
+              {heatLoading ? <p className={styles.macroStatus}>Loading theme heat...</p> : null}
+              {heatError ? <p className={styles.macroError}>{heatError}</p> : null}
+
+              {heatCells.length === 0 ? (
+                <p className={styles.macroEmpty}>No theme heat data yet.</p>
+              ) : (
+                <div className={styles.heatGrid}>
+                  {heatCells.map((cell) => (
+                    <div
+                      key={cell.topic}
+                      className={styles.heatCell}
+                      style={heatToneStyle(cell.score)}
+                    >
+                      <p className={styles.heatTopic}>{cell.topic}</p>
+                      <p className={styles.heatScore}>{cell.score}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </section>
 
             <section id="ai-assistant" className={styles.panel}>
@@ -1492,3 +1545,6 @@ export default function Home() {
     </div>
   );
 }
+
+
+
