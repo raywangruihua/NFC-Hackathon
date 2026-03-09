@@ -1,3 +1,5 @@
+# backend/analysislib/test.py
+# This script seeds fake themes into database for frontend testing and verifies database connection.
 import sys
 from datetime import datetime, timezone
 
