@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ChangeEvent } from "react";
 import {
   Bell,
   Bot,
@@ -23,6 +23,10 @@ type SeriesCard = {
 
 type MacroSeriesCard = SeriesCard & {
   indicatorKey: string;
+};
+
+type MarketSeriesCard = SeriesCard & {
+  marketKey: string;
 };
 
 type FredCategoryOption = {
@@ -61,6 +65,42 @@ type FredSeriesResponse = {
   };
 };
 
+type NewsArticle = {
+  id: string;
+  title: string;
+  description: string;
+};
+
+type NewsResponse = {
+  articles: NewsArticle[];
+};
+
+type MarketFunction =
+  | "TIME_SERIES_INTRADAY"
+  | "TIME_SERIES_DAILY"
+  | "TIME_SERIES_DAILY_ADJUSTED"
+  | "TIME_SERIES_WEEKLY"
+  | "TIME_SERIES_WEEKLY_ADJUSTED"
+  | "TIME_SERIES_MONTHLY"
+  | "TIME_SERIES_MONTHLY_ADJUSTED";
+
+type SymbolSearchMatch = {
+  symbol: string;
+  name: string;
+  type: string | null;
+  region: string | null;
+  market_open: string | null;
+  market_close: string | null;
+  timezone: string | null;
+  currency: string | null;
+};
+
+type SymbolSearchResponse = {
+  keywords: string;
+  matches: SymbolSearchMatch[];
+  count: number;
+};
+
 type TimelineEvent = {
   date: string;
   title: string;
@@ -89,42 +129,28 @@ type AlertRule = {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_BACKEND_BASE_URL ?? "http://localhost:8000";
 const MAX_MACRO_GRAPHS = 8;
+const MAX_MARKET_GRAPHS = 8;
+const NEWS_ROTATE_MS = 6000;
 
-// Place holder market data
-const marketSeriesCards: SeriesCard[] = [
-  {
-    name: "S&P 500",
-    value: "5,148.42",
-    change: "+0.72%",
-    points: [38, 42, 41, 46, 44, 50, 52],
-    tone: "up",
-    type: "stock",
-  },
-  {
-    name: "AAPL",
-    value: "4.21%",
-    change: "-0.08%",
-    points: [55, 54, 52, 51, 49, 48, 47],
-    tone: "down",
-    type: "macro",
-  },
-  {
-    name: "NVDA",
-    value: "3.1%",
-    change: "-0.20%",
-    points: [60, 58, 57, 55, 54, 52, 50],
-    tone: "down",
-    type: "macro",
-  },
-  {
-    name: "TSLA",
-    value: "3.9%",
-    change: "+0.10%",
-    points: [42, 41, 43, 45, 44, 46, 47],
-    tone: "up",
-    type: "macro",
-  },
+const MARKET_FUNCTION_OPTIONS: Array<{ value: MarketFunction; label: string }> = [
+  { value: "TIME_SERIES_INTRADAY", label: "Intraday" },
+  { value: "TIME_SERIES_DAILY", label: "Daily" },
+  { value: "TIME_SERIES_DAILY_ADJUSTED", label: "Daily Adjusted" },
+  { value: "TIME_SERIES_WEEKLY", label: "Weekly" },
+  { value: "TIME_SERIES_WEEKLY_ADJUSTED", label: "Weekly Adjusted" },
+  { value: "TIME_SERIES_MONTHLY", label: "Monthly" },
+  { value: "TIME_SERIES_MONTHLY_ADJUSTED", label: "Monthly Adjusted" },
 ];
+
+const MARKET_ENDPOINTS: Record<MarketFunction, string> = {
+  TIME_SERIES_INTRADAY: "/api/market/time-series/intraday",
+  TIME_SERIES_DAILY: "/api/market/time-series/daily",
+  TIME_SERIES_DAILY_ADJUSTED: "/api/market/time-series/daily-adjusted",
+  TIME_SERIES_WEEKLY: "/api/market/time-series/weekly",
+  TIME_SERIES_WEEKLY_ADJUSTED: "/api/market/time-series/weekly-adjusted",
+  TIME_SERIES_MONTHLY: "/api/market/time-series/monthly",
+  TIME_SERIES_MONTHLY_ADJUSTED: "/api/market/time-series/monthly-adjusted",
+};
 
 // Placeholder timeline data
 const timelineEvents: TimelineEvent[] = [
@@ -367,15 +393,16 @@ function Sparkline({
 
 function heatToneStyle(score: number): CSSProperties {
   /**
-   * Generate heat tone colour for heat map based on heat score.
+   * Continuous red -> yellow -> green scale.
+   * Uses the same intermediate interpolation approach as before.
    */
   const clamped = Math.max(0, Math.min(100, score));
-  const hue = 120 - (clamped / 100) * 120;
-  const darkFill = `hsl(${hue}, 62%, 23%)`;
-  const border = `hsl(${hue}, 68%, 34%)`;
+  const hue = (clamped / 100) * 120; // 0=red, 60=yellow, 120=green
+  const fill = `hsl(${hue}, 100%, 30%)`;
+  const border = `hsl(${hue}, 100%, 30%)`;
 
   return {
-    backgroundColor: darkFill,
+    backgroundColor: fill,
     borderColor: border,
   };
 }
@@ -467,7 +494,90 @@ function normalizeSeries(observations: Array<{ date: string; value: number }>) {
   };
 }
 
+function toRecentMonthOptions(count = 12) {
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date();
+    date.setMonth(date.getMonth() - index);
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    return `${date.getFullYear()}-${month}`;
+  });
+}
+
+function extractAlphaClose(row: Record<string, string>) {
+  const preferred = ["5. adjusted close", "4. close"];
+  for (const key of preferred) {
+    const value = row[key];
+    if (!value) continue;
+    const parsed = Number.parseFloat(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  for (const [key, value] of Object.entries(row)) {
+    if (!key.toLowerCase().includes("close")) continue;
+    const parsed = Number.parseFloat(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+
+  return null;
+}
+
+function parseAlphaSeries(raw: Record<string, unknown>) {
+  const seriesEntry = Object.entries(raw).find(
+    ([key, value]) =>
+      key.toLowerCase().includes("time series") &&
+      typeof value === "object" &&
+      value !== null &&
+      !Array.isArray(value)
+  );
+
+  if (!seriesEntry) {
+    throw new Error("No time series data found for the selected options.");
+  }
+
+  const rows = seriesEntry[1] as Record<string, Record<string, string>>;
+  const normalizedRows = Object.entries(rows)
+    .map(([date, row]) => {
+      if (!row || typeof row !== "object") return null;
+      const closeValue = extractAlphaClose(row);
+      if (closeValue === null) return null;
+      return { date, value: closeValue };
+    })
+    .filter((row): row is { date: string; value: number } => row !== null)
+    .sort((left, right) => left.date.localeCompare(right.date));
+
+  const latest = normalizedRows.length > 0 ? normalizedRows[normalizedRows.length - 1] : null;
+  const previous = normalizedRows.length > 1 ? normalizedRows[normalizedRows.length - 2] : null;
+  const normalizedSeries = normalizeSeries(normalizedRows);
+
+  return {
+    normalizedSeries,
+    latest,
+    previous,
+  };
+}
+
+function extractAlphaMetaSymbol(raw: Record<string, unknown>) {
+  const meta = raw["Meta Data"];
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) return null;
+  const symbol = (meta as Record<string, unknown>)["2. Symbol"];
+  return typeof symbol === "string" && symbol ? symbol : null;
+}
+
 export default function Home() {
+  const recentMonthOptions = toRecentMonthOptions(18);
+  const [marketSymbolInput, setMarketSymbolInput] = useState("");
+  const [marketSymbolMatches, setMarketSymbolMatches] = useState<SymbolSearchMatch[]>([]);
+  const [showMarketMatches, setShowMarketMatches] = useState(false);
+  const [marketFunction, setMarketFunction] = useState<MarketFunction>("TIME_SERIES_INTRADAY");
+  const [marketInterval, setMarketInterval] = useState<"1min" | "5min" | "15min" | "30min" | "60min">("5min");
+  const [marketAdjusted, setMarketAdjusted] = useState<"default" | "true" | "false">("default");
+  const [marketExtendedHours, setMarketExtendedHours] = useState<"default" | "true" | "false">("default");
+  const [marketMonth, setMarketMonth] = useState("");
+  const [marketEntitlement, setMarketEntitlement] = useState<"default" | "realtime" | "delayed">("default");
+  const [marketCards, setMarketCards] = useState<MarketSeriesCard[]>([]);
+  const [marketLoading, setMarketLoading] = useState(false);
+  const [marketError, setMarketError] = useState<string | null>(null);
+  const [marketSymbolLoading, setMarketSymbolLoading] = useState(false);
   const [selectedCountry, setSelectedCountry] = useState("USA");
   const [categories, setCategories] = useState<FredCategoryOption[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("");
@@ -478,10 +588,114 @@ export default function Home() {
   const [macroCards, setMacroCards] = useState<MacroSeriesCard[]>([]);
   const [macroLoading, setMacroLoading] = useState(false);
   const [macroError, setMacroError] = useState<string | null>(null);
+
   const [heatCells, setHeatCells] = useState<HeatCell[]>([]);
   const [heatLoading, setHeatLoading] = useState(false);
   const [heatError, setHeatError] = useState<string | null>(null);
+  const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([]);
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [newsError, setNewsError] = useState<string | null>(null);
+  const [activeNewsIndex, setActiveNewsIndex] = useState(0);
+  const newsViewportRef = useRef<HTMLDivElement | null>(null);
 
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadNews() {
+      setNewsLoading(true);
+      setNewsError(null);
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/news`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          throw new Error("Failed to load news.");
+        }
+
+        const data = (await response.json()) as NewsResponse;
+        const nextArticles = data.articles ?? [];
+        setNewsArticles(nextArticles);
+        setActiveNewsIndex(0);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setNewsArticles([]);
+        setNewsError("Unable to load news.");
+      } finally {
+        setNewsLoading(false);
+      }
+    }
+
+    void loadNews();
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (newsArticles.length < 2) return;
+
+    const intervalId = window.setInterval(() => {
+      setActiveNewsIndex((current) => {
+        const nextIndex = (current + 1) % newsArticles.length;
+        const viewport = newsViewportRef.current;
+        if (viewport) {
+          const cardHeight = viewport.clientHeight;
+          viewport.scrollTo({
+            top: nextIndex * cardHeight,
+            behavior: "smooth",
+          });
+        }
+        return nextIndex;
+      });
+    }, NEWS_ROTATE_MS);
+
+    return () => window.clearInterval(intervalId);
+  }, [newsArticles]);
+
+  useEffect(() => {
+    const viewport = newsViewportRef.current;
+    if (!viewport) return;
+    viewport.scrollTop = 0;
+  }, [newsArticles]);
+
+  useEffect(() => {
+    const keyword = marketSymbolInput.trim();
+    if (keyword.length < 1) {
+      setMarketSymbolMatches([]);
+      setShowMarketMatches(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(async () => {
+      setMarketSymbolLoading(true);
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/market/symbol-search?keywords=${encodeURIComponent(keyword)}&limit=8`,
+          { signal: controller.signal }
+        );
+        if (!response.ok) {
+          throw new Error("Failed to load symbol matches.");
+        }
+
+        const data = (await response.json()) as SymbolSearchResponse;
+        const nextMatches = data.matches ?? [];
+        setMarketSymbolMatches(nextMatches);
+        setShowMarketMatches((current) => current && nextMatches.length > 0);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setMarketSymbolMatches([]);
+        setShowMarketMatches(false);
+      } finally {
+        setMarketSymbolLoading(false);
+      }
+    }, 280);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [marketSymbolInput]);
+  
   // Country selection drop down menu
   useEffect(() => {
     const controller = new AbortController();
@@ -491,7 +705,7 @@ export default function Home() {
       setMacroError(null);
       try {
         const response = await fetch(
-          `${API_BASE_URL}/api/fred/categories?country=${encodeURIComponent(
+          `${API_BASE_URL}/api/macroeconomic/categories?country=${encodeURIComponent(
             selectedCountry.toLowerCase()
           )}`,
           { signal: controller.signal }
@@ -538,7 +752,7 @@ export default function Home() {
       setMacroError(null);
       try {
         const response = await fetch(
-          `${API_BASE_URL}/api/fred/indicators?category=${encodeURIComponent(selectedCategory)}`,
+          `${API_BASE_URL}/api/macroeconomic/indicators?category=${encodeURIComponent(selectedCategory)}`,
           { signal: controller.signal }
         );
         if (!response.ok) {
@@ -623,7 +837,7 @@ export default function Home() {
       if (endDate) query.set("end_date", endDate);
 
       const response = await fetch(
-        `${API_BASE_URL}/api/fred/series?${query.toString()}`
+        `${API_BASE_URL}/api/macroeconomic/series?${query.toString()}`
       );
       if (!response.ok) {
         throw new Error("Failed to load series data.");
@@ -653,6 +867,110 @@ export default function Home() {
       setMacroError("Unable to load series data for the selected indicator.");
     } finally {
       setMacroLoading(false);
+    }
+  };
+
+  const handleMarketSymbolSelect = (match: SymbolSearchMatch) => {
+    setMarketSymbolInput(match.symbol);
+    setShowMarketMatches(false);
+  };
+
+  const handleMarketSearchClick = async () => {
+    const symbol = marketSymbolInput.trim().toUpperCase();
+    if (!symbol) {
+      setMarketError("Please select or enter a symbol.");
+      return;
+    }
+
+    setMarketLoading(true);
+    setMarketError(null);
+
+    try {
+      const endpoint = MARKET_ENDPOINTS[marketFunction];
+      const query = new URLSearchParams({ symbol });
+
+      if (marketFunction === "TIME_SERIES_INTRADAY") {
+        query.set("interval", marketInterval);
+        if (marketAdjusted !== "default") query.set("adjusted", marketAdjusted);
+        if (marketExtendedHours !== "default") query.set("extended_hours", marketExtendedHours);
+        if (marketMonth) query.set("month", marketMonth);
+        if (marketEntitlement !== "default") query.set("entitlement", marketEntitlement);
+      } else if (
+        marketFunction === "TIME_SERIES_DAILY" ||
+        marketFunction === "TIME_SERIES_DAILY_ADJUSTED"
+      ) {
+        if (marketEntitlement !== "default") query.set("entitlement", marketEntitlement);
+      }
+
+      const response = await fetch(`${API_BASE_URL}${endpoint}?${query.toString()}`);
+      if (!response.ok) {
+        throw new Error("Failed to load market time series.");
+      }
+
+      const data = (await response.json()) as Record<string, unknown>;
+      if (typeof data.error === "string") {
+        throw new Error(data.error);
+      }
+
+      const { normalizedSeries, latest, previous } = parseAlphaSeries(data);
+      const latestValue = latest?.value ?? null;
+      const previousValue = previous?.value ?? null;
+      const changePercent =
+        latestValue !== null && previousValue !== null && previousValue !== 0
+          ? ((latestValue - previousValue) / previousValue) * 100
+          : 0;
+
+      const resolvedSymbol = extractAlphaMetaSymbol(data) ?? symbol;
+      const key = [
+        resolvedSymbol,
+        marketFunction,
+        marketInterval,
+        marketAdjusted,
+        marketExtendedHours,
+        marketMonth,
+        marketEntitlement,
+      ].join("|");
+      const functionLabel =
+        MARKET_FUNCTION_OPTIONS.find((option) => option.value === marketFunction)?.label ??
+        marketFunction;
+
+      const nextCard: MarketSeriesCard = {
+        marketKey: key,
+        name: `${resolvedSymbol} · ${functionLabel}`,
+        value: formatMetricValue(latestValue),
+        change: formatPercentChange(changePercent),
+        points: normalizedSeries.points,
+        xLabels: normalizedSeries.xLabels,
+        tone: changePercent >= 0 ? "up" : "down",
+        type: "stock",
+      };
+
+      setMarketCards((previousCards) => {
+        const withoutCurrent = previousCards.filter((card) => card.marketKey !== key);
+        const nextCards = [...withoutCurrent, nextCard];
+        if (nextCards.length <= MAX_MARKET_GRAPHS) return nextCards;
+        return nextCards.slice(nextCards.length - MAX_MARKET_GRAPHS);
+      });
+      setShowMarketMatches(false);
+    } catch (error) {
+      if (error instanceof Error) {
+        setMarketError(error.message || "Unable to load market time series.");
+      } else {
+        setMarketError("Unable to load market time series.");
+      }
+    } finally {
+      setMarketLoading(false);
+    }
+  };
+
+  const handleNewsScroll = () => {
+    const viewport = newsViewportRef.current;
+    if (!viewport) return;
+    const cardHeight = viewport.clientHeight || 1;
+    const nextIndex = Math.round(viewport.scrollTop / cardHeight);
+    const boundedIndex = Math.max(0, Math.min(newsArticles.length - 1, nextIndex));
+    if (boundedIndex !== activeNewsIndex) {
+      setActiveNewsIndex(boundedIndex);
     }
   };
 
@@ -713,39 +1031,199 @@ export default function Home() {
               <div className={styles.panelHead}>
                 <h2 className={styles.featureTitle}>Today&apos;s Market</h2>
                 <span className={styles.annotation}>
-                  TODO: Connect backend API to display real data, add graphs page with more detailed information for graphs
+                  Search symbols and time series from Alpha Vantage
                 </span>
               </div>
 
-              <div className={styles.seriesGrid}>
-                {marketSeriesCards.map((card) => (
-                  <article key={card.name} className={styles.seriesCard}>
-                    <div className={styles.seriesTop}>
-                      <div>
-                        <p className={styles.seriesName}>{card.name}</p>
-                      </div>
-                      <div className={styles.seriesMetric}>
-                        <p className={styles.seriesValue}>{card.value}</p>
-                        <p
-                          className={`${styles.seriesChange} ${
-                            card.tone === "up" ? styles.changeUp : styles.changeDown
-                          }`}
-                        >
-                          {card.change}
-                        </p>
-                      </div>
-                    </div>
-                    <Sparkline points={card.points} tone={card.tone} />
-                  </article>
-                ))}
+              <div className={styles.macroFilterRow}>
+                <label className={styles.macroFilterField}>
+                  <span className={styles.macroFilterLabel}>Symbol</span>
+                  <div className={styles.marketSymbolWrap}>
+                    <input
+                      className={styles.marketSymbolInput}
+                      value={marketSymbolInput}
+                      onChange={(event) => {
+                        setMarketSymbolInput(event.target.value);
+                        setShowMarketMatches(true);
+                      }}
+                      onFocus={() => setShowMarketMatches(marketSymbolMatches.length > 0)}
+                      placeholder="Search symbol..."
+                    />
+                    {showMarketMatches && marketSymbolMatches.length > 0 ? (
+                      <ul className={styles.marketAutocomplete}>
+                        {marketSymbolMatches.map((match) => (
+                          <li key={`${match.symbol}-${match.region}`}>
+                            <button
+                              type="button"
+                              className={styles.marketAutocompleteButton}
+                              onClick={() => handleMarketSymbolSelect(match)}
+                            >
+                              <span>{match.symbol}</span>
+                              <span className={styles.marketAutocompleteMeta}>
+                                {match.name}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </div>
+                </label>
+
+                <label className={styles.macroFilterField}>
+                  <span className={styles.macroFilterLabel}>Function</span>
+                  <select
+                    className={styles.macroSelect}
+                    value={marketFunction}
+                    onChange={(event) => setMarketFunction(event.target.value as MarketFunction)}
+                  >
+                    {MARKET_FUNCTION_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className={styles.macroFilterField}>
+                  <span className={styles.macroFilterLabel}>Interval</span>
+                  <select
+                    className={styles.macroSelect}
+                    value={marketInterval}
+                    onChange={(event) =>
+                      setMarketInterval(event.target.value as "1min" | "5min" | "15min" | "30min" | "60min")
+                    }
+                    disabled={marketFunction !== "TIME_SERIES_INTRADAY"}
+                  >
+                    <option value="1min">1min</option>
+                    <option value="5min">5min</option>
+                    <option value="15min">15min</option>
+                    <option value="30min">30min</option>
+                    <option value="60min">60min</option>
+                  </select>
+                </label>
+
+                <label className={styles.macroFilterField}>
+                  <span className={styles.macroFilterLabel}>Adjusted</span>
+                  <select
+                    className={styles.macroSelect}
+                    value={marketAdjusted}
+                    onChange={(event) => setMarketAdjusted(event.target.value as "default" | "true" | "false")}
+                    disabled={marketFunction !== "TIME_SERIES_INTRADAY"}
+                  >
+                    <option value="default">Default</option>
+                    <option value="true">True</option>
+                    <option value="false">False</option>
+                  </select>
+                </label>
+
+                <label className={styles.macroFilterField}>
+                  <span className={styles.macroFilterLabel}>Extended Hours</span>
+                  <select
+                    className={styles.macroSelect}
+                    value={marketExtendedHours}
+                    onChange={(event) => setMarketExtendedHours(event.target.value as "default" | "true" | "false")}
+                    disabled={marketFunction !== "TIME_SERIES_INTRADAY"}
+                  >
+                    <option value="default">Default</option>
+                    <option value="true">True</option>
+                    <option value="false">False</option>
+                  </select>
+                </label>
+
+                <label className={styles.macroFilterField}>
+                  <span className={styles.macroFilterLabel}>Month</span>
+                  <select
+                    className={styles.macroSelect}
+                    value={marketMonth}
+                    onChange={(event) => setMarketMonth(event.target.value)}
+                    disabled={marketFunction !== "TIME_SERIES_INTRADAY"}
+                  >
+                    <option value="">Latest month</option>
+                    {recentMonthOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className={styles.macroFilterField}>
+                  <span className={styles.macroFilterLabel}>Entitlement</span>
+                  <select
+                    className={styles.macroSelect}
+                    value={marketEntitlement}
+                    onChange={(event) =>
+                      setMarketEntitlement(event.target.value as "default" | "realtime" | "delayed")
+                    }
+                    disabled={
+                      marketFunction !== "TIME_SERIES_INTRADAY" &&
+                      marketFunction !== "TIME_SERIES_DAILY" &&
+                      marketFunction !== "TIME_SERIES_DAILY_ADJUSTED"
+                    }
+                  >
+                    <option value="default">Default</option>
+                    <option value="realtime">Realtime</option>
+                    <option value="delayed">Delayed</option>
+                  </select>
+                </label>
               </div>
+
+              <div className={styles.macroSearchRow}>
+                <button
+                  type="button"
+                  className={styles.macroSearchButton}
+                  onClick={handleMarketSearchClick}
+                  disabled={!marketSymbolInput.trim() || marketLoading}
+                >
+                  {marketLoading ? "Loading..." : "Search"}
+                </button>
+              </div>
+
+              <p className={styles.macroStatus}>
+                Selected indicators: {marketCards.length}/{MAX_MARKET_GRAPHS}
+              </p>
+              {marketSymbolLoading ? (
+                <p className={styles.macroStatus}>Searching symbols...</p>
+              ) : null}
+              {marketLoading ? <p className={styles.macroStatus}>Loading market data...</p> : null}
+              {marketError ? <p className={styles.macroError}>{marketError}</p> : null}
+
+              {marketCards.length === 0 ? (
+                <p className={styles.macroEmpty}>
+                  Search to generate market graphs.
+                </p>
+              ) : (
+                <div className={styles.seriesGrid}>
+                  {marketCards.map((card) => (
+                    <article key={card.marketKey} className={styles.seriesCard}>
+                      <div className={styles.seriesTop}>
+                        <div>
+                          <p className={styles.seriesName}>{card.name}</p>
+                        </div>
+                        <div className={styles.seriesMetric}>
+                          <p className={styles.seriesValue}>{card.value}</p>
+                          <p
+                            className={`${styles.seriesChange} ${
+                              card.tone === "up" ? styles.changeUp : styles.changeDown
+                            }`}
+                          >
+                            {card.change}
+                          </p>
+                        </div>
+                      </div>
+                      <Sparkline points={card.points} tone={card.tone} xLabels={card.xLabels} />
+                    </article>
+                  ))}
+                </div>
+              )}
             </section>
 
             <section id="macro-indicators" className={styles.panel}>
               <div className={styles.panelHead}>
                 <h2 className={styles.featureTitle}>Today&apos;s Macroeconomic Indicators</h2>
                 <span className={styles.annotation}>
-                  TODO: Add global/country expansion (currently USA only) and richer chart drill-down
+                  TODO: Add global/country expansion (currently USA only)
                 </span>
               </div>
 
@@ -918,13 +1396,45 @@ export default function Home() {
           </div>
 
           <div className={styles.stack}>
+            <section id="news-feed" className={styles.panel}>
+              <div className={styles.panelHead}>
+                <h2 className={styles.featureTitle}>
+                  News
+                </h2>
+              </div>
+
+              <div
+                ref={newsViewportRef}
+                className={styles.newsViewport}
+                aria-live="polite"
+                onScroll={handleNewsScroll}
+              >
+                {newsLoading ? <p className={styles.newsStatus}>Loading news...</p> : null}
+                {newsError ? <p className={styles.newsError}>{newsError}</p> : null}
+                {!newsLoading && !newsError && newsArticles.length === 0 ? (
+                  <p className={styles.newsStatus}>No news available.</p>
+                ) : null}
+
+                {!newsLoading && !newsError && newsArticles.length > 0 ? (
+                  <div className={styles.newsTrack}>
+                    {newsArticles.map((article) => (
+                      <article key={article.id} className={styles.newsCard}>
+                        <p className={styles.newsTitle}>{article.title}</p>
+                        <p className={styles.newsDescription}>{article.description}</p>
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </section>
+
             <section id="theme-heat" className={styles.panel}>
               <div className={styles.panelHead}>
                 <h2 className={styles.featureTitle}>
                   Trending Themes
                 </h2>
                 <span className={styles.annotation}>
-                  TODO: Retrieve highest heat score themes from database
+                  TODO: Retrieve highest heat score themes from database.
                 </span>
               </div>
 

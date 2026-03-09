@@ -4,9 +4,11 @@ This initial prototype follows a monolithic structure.
 
 ## Setup Guide
 
-1. Run main.py in backend/src
+1. Add backend base url to frontend/.env.local and frontend base url to backend/.env
 
-2. Start frontend server:
+2. Run main.py in backend/src
+
+3. Start frontend server:
 
 ```bash
 cd frontend
