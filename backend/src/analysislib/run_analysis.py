@@ -1,3 +1,5 @@
+# This script serves as the entrypoint for running the full analysis flow in analysislib. 
+
 from typing import Any
 
 from .logic.heat_score import calculate_theme_heat
