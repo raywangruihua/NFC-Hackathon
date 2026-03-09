@@ -130,6 +130,7 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_BACKEND_BASE_URL ?? "").replace(/\
 const MAX_MACRO_GRAPHS = 8;
 const MAX_MARKET_GRAPHS = 8;
 const NEWS_ROTATE_MS = 6000;
+const MAX_SPARKLINE_TICKS = 6;
 
 const MARKET_FUNCTION_OPTIONS: Array<{ value: MarketFunction; label: string }> = [
   { value: "TIME_SERIES_DAILY", label: "Daily" },
@@ -255,8 +256,8 @@ function chooseXAxisGranularity(xLabels: string[]) {
   const dayMs = 24 * 60 * 60 * 1000;
   const spanDays = spanMs / dayMs;
 
-  if (spanDays <= 92) return "day";
-  if (spanDays <= 365 * 3) return "month";
+  if (spanDays <= 3 * 30) return "day";
+  if (spanDays <= 365) return "month";
   return "year";
 }
 
@@ -265,14 +266,22 @@ function formatXAxisDateLabel(rawDate: string, granularity: string) {
   if (Number.isNaN(parsed.getTime())) return rawDate;
 
   if (granularity === "day") {
-    return Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(parsed);
+    return Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(parsed);
   }
 
   if (granularity === "month") {
-    return Intl.DateTimeFormat("en-US", { month: "short", year: "2-digit" }).format(parsed);
+    return Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(parsed);
   }
 
   return Intl.DateTimeFormat("en-US", { year: "numeric" }).format(parsed);
+}
+
+function buildTickFractions(pointCount: number, maxTicks = MAX_SPARKLINE_TICKS) {
+  if (pointCount <= 0) return [];
+
+  const tickCount = Math.min(pointCount, Math.max(1, maxTicks));
+  if (tickCount === 1) return [0];
+  return Array.from({ length: tickCount }, (_, idx) => idx / (tickCount - 1));
 }
 
 function Sparkline({
@@ -294,44 +303,36 @@ function Sparkline({
   const plotHeight = height - padTop - padBottom;
   const max = Math.max(...points);
   const min = Math.min(...points);
-  const spread = Math.max(max - min, 1);
-  const mid = min + spread / 2;
+  const valueRange = max - min;
+  const spread = Math.max(valueRange, 1);
+  const tickFractions = buildTickFractions(points.length);
 
-  const path = points
-    .map((point, i) => {
-      const x = padLeft + (points.length > 1 ? (i / (points.length - 1)) * plotWidth : plotWidth / 2);
+  const path = points.map((point, i) => {
+      const x =
+        padLeft +
+        (points.length > 1 ? (i / (points.length - 1)) * plotWidth : plotWidth / 2);
       const y = padTop + (1 - (point - min) / spread) * plotHeight;
       return `${i === 0 ? "M" : "L"} ${x} ${y}`;
     })
     .join(" ");
 
-  const yTicks = [
-    { value: max, y: padTop },
-    { value: mid, y: padTop + plotHeight / 2 },
-    { value: min, y: padTop + plotHeight },
-  ];
+  const yTicks = tickFractions.map((fraction, index) => {
+    const value = valueRange === 0 ? max : max - fraction * valueRange;
+    const y = padTop + fraction * plotHeight;
+    return { index, value, y };
+  });
 
   const hasDateLabels = Array.isArray(xLabels) && xLabels.length === points.length;
   const xAxisGranularity = hasDateLabels ? chooseXAxisGranularity(xLabels) : "month";
-  const midpointIndex = Math.floor((points.length - 1) / 2);
-  const xTicks = [
-    {
-      label: hasDateLabels ? formatXAxisDateLabel(xLabels[0], xAxisGranularity) : "T1",
-      x: padLeft,
-    },
-    {
-      label: hasDateLabels
-        ? formatXAxisDateLabel(xLabels[midpointIndex], xAxisGranularity)
-        : `T${Math.ceil(points.length / 2)}`,
-      x: padLeft + plotWidth / 2,
-    },
-    {
-      label: hasDateLabels
-        ? formatXAxisDateLabel(xLabels[points.length - 1], xAxisGranularity)
-        : `T${points.length}`,
-      x: padLeft + plotWidth,
-    },
-  ];
+  const xTicks = tickFractions.map((fraction, index) => {
+    const x = padLeft + fraction * plotWidth;
+    const labelIndex = points.length > 1 ? Math.round(fraction * (points.length - 1)) : 0;
+    return {
+      index,
+      label: hasDateLabels ? formatXAxisDateLabel(xLabels[labelIndex], xAxisGranularity) : `T${labelIndex + 1}`,
+      x,
+    };
+  });
 
   const formatAxisValue = (value: number) =>
     Intl.NumberFormat("en-US", {
@@ -348,7 +349,7 @@ function Sparkline({
     >
       {yTicks.map((tick) => (
         <line
-          key={`grid-${tick.value}-${tick.y}`}
+          key={`grid-${tick.index}`}
           className={styles.sparklineGrid}
           x1={padLeft}
           y1={tick.y}
@@ -374,7 +375,7 @@ function Sparkline({
       <path className={styles.sparklinePath} d={path} />
 
       {yTicks.map((tick) => (
-        <g key={`ytick-${tick.value}-${tick.y}`}>
+        <g key={`ytick-${tick.index}`}>
           <line
             className={styles.sparklineTick}
             x1={padLeft - 3}
@@ -389,7 +390,7 @@ function Sparkline({
       ))}
 
       {xTicks.map((tick) => (
-        <g key={`xtick-${tick.label}-${tick.x}`}>
+        <g key={`xtick-${tick.index}`}>
           <line
             className={styles.sparklineTick}
             x1={tick.x}
