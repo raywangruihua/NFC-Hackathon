@@ -7,7 +7,7 @@ from typing import Any, Dict
 from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
-from databaselib.db import get_active_themes, get_events
+from databaselib.db import get_active_themes, get_events, get_events_for_theme, get_theme_by_id
 
 
 from datalib.datalib import (
@@ -495,6 +495,7 @@ def get_hottest_themes() -> Response:
     return jsonify(
         [
             {
+                "theme_id": theme.get("theme_id"),
                 "topic": theme.get("title", "Unknown"),
                 "score": float(theme.get("heat_score") or 0.0),
                 "region": theme.get("region"),
@@ -503,6 +504,85 @@ def get_hottest_themes() -> Response:
             }
             for theme in top_themes
         ]
+    )
+
+
+@app.get("/api/themes")
+def get_themes_list() -> Response:
+    """
+    Return all active themes for the theme selector dropdown.
+    """
+    themes = get_active_themes()
+    return jsonify(
+        [
+            {
+                "theme_id": theme.get("theme_id"),
+                "title": theme.get("title", "Unknown"),
+                "heat_score": float(theme.get("heat_score") or 0.0),
+            }
+            for theme in themes
+        ]
+    )
+
+
+def _importance_to_impact(score: float) -> str:
+    if score >= 0.7:
+        return "High"
+    if score >= 0.4:
+        return "Medium"
+    return "Low"
+
+
+@app.get("/api/themes/<theme_id>/timeline")
+def get_theme_timeline(theme_id: str) -> Response:
+    """
+    Return a theme's metadata together with all its linked events,
+    sorted by published_at descending.
+    """
+    theme = get_theme_by_id(theme_id)
+    if theme is None:
+        return _json_error("Theme not found.", status_code=404)
+
+    raw_rows = get_events_for_theme(theme_id)
+    events = []
+    for row in raw_rows:
+        ev = row.get("events")
+        if not ev:
+            continue
+        events.append(ev)
+
+    events.sort(key=lambda e: e.get("published_at", ""), reverse=True)
+
+    return jsonify(
+        {
+            "theme": {
+                "theme_id": theme.get("theme_id"),
+                "title": theme.get("title"),
+                "description": theme.get("description"),
+                "heat_score": float(theme.get("heat_score") or 0.0),
+                "status": theme.get("status"),
+                "region": theme.get("region"),
+                "asset_classes": theme.get("asset_classes") or [],
+                "first_seen_at": theme.get("first_seen_at"),
+                "last_seen_at": theme.get("last_seen_at"),
+            },
+            "events": [
+                {
+                    "event_id": ev.get("event_id"),
+                    "date": ev.get("published_at"),
+                    "title": (ev.get("content") or "")[:120],
+                    "text": ev.get("content") or "",
+                    "source": ev.get("source") or "Unknown",
+                    "impact": _importance_to_impact(
+                        float(ev.get("importance_score") or 0)
+                    ),
+                    "sentiment": ev.get("sentiment"),
+                    "region": ev.get("region"),
+                    "asset_classes": ev.get("asset_classes") or [],
+                }
+                for ev in events
+            ],
+        }
     )
 
 @app.get("/api/news")

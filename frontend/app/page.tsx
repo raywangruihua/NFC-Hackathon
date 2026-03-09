@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties, type ChangeEvent } from "react";
+import Link from "next/link";
 import {
   Bell,
   Bot,
   ChartCandlestick,
   Earth,
-  History,
-  Newspaper,
   Thermometer,
 } from "lucide-react";
 import styles from "./page.module.css";
@@ -101,15 +100,10 @@ type SymbolSearchResponse = {
   count: number;
 };
 
-type TimelineEvent = {
-  date: string;
-  title: string;
-  text: string;
-  source: string;
-  impact: "High" | "Medium" | "Low";
-};
+
 
 type HeatCell = {
+  theme_id: string;
   topic: string;
   score: number;
 };
@@ -127,7 +121,7 @@ type AlertRule = {
 };
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_BACKEND_BASE_URL
+  process.env.NEXT_PUBLIC_BACKEND_BASE_URL ?? "http://localhost:8000";
 const MAX_MACRO_GRAPHS = 8;
 const MAX_MARKET_GRAPHS = 8;
 const NEWS_ROTATE_MS = 6000;
@@ -151,37 +145,7 @@ const MARKET_ENDPOINTS: Record<MarketFunction, string> = {
   TIME_SERIES_MONTHLY_ADJUSTED: "/api/market/time-series/monthly-adjusted",
 };
 
-// Placeholder timeline data
-const timelineEvents: TimelineEvent[] = [
-  {
-    date: "2026-02-27",
-    title: "Fed signals caution on rate cuts",
-    text: "Policymakers highlighted sticky services inflation and signaled they need more data before easing policy.",
-    source: "FOMC Minutes",
-    impact: "High",
-  },
-  {
-    date: "2026-02-21",
-    title: "Core inflation prints below estimate",
-    text: "Core CPI slowed month-over-month as goods disinflation continued, reducing near-term tightening risk.",
-    source: "BLS Release",
-    impact: "High",
-  },
-  {
-    date: "2026-02-15",
-    title: "Manufacturing PMI re-enters expansion",
-    text: "PMI moved back above 50 on stronger new orders, suggesting a rebound in industrial momentum.",
-    source: "ISM",
-    impact: "Medium",
-  },
-  {
-    date: "2026-02-08",
-    title: "Services inflation shows renewed pressure",
-    text: "Shelter and wage-sensitive categories remained firm, increasing risk that disinflation progress stalls.",
-    source: "NFP Report",
-    impact: "Medium",
-  },
-];
+
 
 // Placeholder theme heat data
 /*
@@ -450,11 +414,7 @@ function alertToneClass(status: AlertRule["status"]) {
   return status === "Breached" ? styles.alertBreached : styles.alertWatching;
 }
 
-function impactToneClass(impact: TimelineEvent["impact"]) {
-  if (impact === "High") return styles.impactHigh;
-  if (impact === "Medium") return styles.impactMedium;
-  return styles.impactLow;
-}
+
 
 function toLabel(value: string) {
   const tokenMap: Record<string, string> = {
@@ -836,8 +796,9 @@ export default function Home() {
           throw new Error("Failed to load hottest themes.");
         }
 
-        const data = (await response.json()) as Array<{ topic: string; score: number }>;
+        const data = (await response.json()) as Array<{ theme_id: string; topic: string; score: number }>;
         const normalized = data.map((item) => ({
+          theme_id: item.theme_id,
           topic: item.topic,
           score: Math.max(0, Math.min(100, Number(item.score) || 0)),
         }));
@@ -1044,18 +1005,6 @@ export default function Home() {
               <a href="#macro-indicators" className={`${styles.moduleItem} ${styles.moduleLink}`}>
                 <Earth className={styles.moduleIcon} aria-hidden />
                 <span>Macro Indicators</span>
-              </a>
-            </li>
-            <li>
-              <a href="#timelines" className={`${styles.moduleItem} ${styles.moduleLink}`}>
-                <History className={styles.moduleIcon} aria-hidden />
-                <span>Timelines</span>
-              </a>
-            </li>
-            <li>
-              <a href="#news-feed" className={`${styles.moduleItem} ${styles.moduleLink}`}>
-                <Newspaper className={styles.moduleIcon} aria-hidden />
-                <span>News Feed</span>
               </a>
             </li>
             <li>
@@ -1361,46 +1310,6 @@ export default function Home() {
                 </div>
               )}
             </section>
-
-            <section id="timelines" className={styles.panel}>
-              <div className={styles.panelHead}>
-                <h2 className={styles.featureTitle}>
-                  Timelines
-                </h2>
-                <span className={styles.annotation}>
-                  TODO: Implement timeline frontend/backend logic (High, medium, low = importance score)
-                </span>
-              </div>
-
-              <div className={styles.queryRow}>
-                <input
-                  readOnly
-                  value="inflation"
-                  aria-label="Timeline topic query"
-                  className={styles.queryInput}
-                />
-                <button type="button" className={styles.queryButton}>
-                  Query Timeline
-                </button>
-              </div>
-
-              <div className={styles.timelineList}>
-                {timelineEvents.map((event) => (
-                  <article key={`${event.date}-${event.title}`} className={styles.timelineEvent}>
-                    <span className={styles.timelineDot} />
-                    <div className={styles.timelineMeta}>
-                      <p className={styles.timelineDate}>{event.date}</p>
-                      <span className={`${styles.impactTag} ${impactToneClass(event.impact)}`}>
-                        {event.impact}
-                      </span>
-                    </div>
-                    <p className={styles.timelineTitle}>{event.title}</p>
-                    <p className={styles.timelineText}>{event.text}</p>
-                    <p className={styles.timelineSource}>Source: {event.source}</p>
-                  </article>
-                ))}
-              </div>
-            </section>
           </div>
 
           <div className={styles.stack}>
@@ -1454,14 +1363,15 @@ export default function Home() {
               ) : (
                 <div className={styles.heatGrid}>
                   {heatCells.map((cell) => (
-                    <div
-                      key={cell.topic}
+                    <Link
+                      key={cell.theme_id || cell.topic}
+                      href={cell.theme_id ? `/timeline/${cell.theme_id}` : "#"}
                       className={styles.heatCell}
                       style={heatToneStyle(cell.score)}
                     >
                       <p className={styles.heatTopic}>{cell.topic}</p>
                       <p className={styles.heatScore}>{cell.score}</p>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               )}
