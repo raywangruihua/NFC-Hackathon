@@ -1,5 +1,6 @@
 import os
 import re
+from datetime import date
 from typing import Any, Dict
 
 from flask import Flask, jsonify, request, Response
@@ -10,7 +11,6 @@ from datalib.datalib import (
     get_alpha_vantage_symbol_search,
     get_alpha_vantage_time_series_daily,
     get_alpha_vantage_time_series_daily_adjusted,
-    get_alpha_vantage_time_series_intraday,
     get_alpha_vantage_time_series_monthly,
     get_alpha_vantage_time_series_monthly_adjusted,
     get_alpha_vantage_time_series_weekly,
@@ -22,9 +22,21 @@ from datalib.datalib import (
 
 load_dotenv()
 FRONT_END_SERVER = os.getenv("FRONT_END_SERVER")
+DEFAULT_FRONTEND_ORIGINS = [
+    r"http://localhost(:\d+)?",
+    r"http://127\.0\.0\.1(:\d+)?",
+]
+ENV_FRONTEND_ORIGINS = [
+    origin.strip()
+    for origin in (FRONT_END_SERVER or "").split(",")
+    if origin.strip()
+]
+ALLOWED_FRONTEND_ORIGINS = ENV_FRONTEND_ORIGINS + [
+    origin for origin in DEFAULT_FRONTEND_ORIGINS if origin not in ENV_FRONTEND_ORIGINS
+]
 
 app = Flask(__name__)
-CORS(app, origins=FRONT_END_SERVER)
+CORS(app, origins=ALLOWED_FRONTEND_ORIGINS)
 
 
 ########################## Helper functions ##########################
@@ -116,21 +128,72 @@ def _normalize_observations(raw: Dict[str, Any]) -> list[Dict[str, Any]]:
     return normalized
 
 
-def _parse_bool(value: str | None) -> bool | None:
-    if value is None:
-        return None
-    lowered = value.strip().lower()
-    if lowered in {"1", "true", "yes", "y"}:
-        return True
-    if lowered in {"0", "false", "no", "n"}:
-        return False
-    raise ValueError(f"Invalid boolean value: {value}")
-
-
 def _json_error(message: str, status_code: int = 400) -> Response:
     response = jsonify({"error": message})
     response.status_code = status_code
     return response
+
+
+def _parse_iso_date(value: str | None, field_name: str) -> date | None:
+    if value is None or value.strip() == "":
+        return None
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise ValueError(f"Invalid {field_name}. Use YYYY-MM-DD.") from exc
+
+
+def _filter_alpha_vantage_time_series(
+    payload: Dict[str, Any],
+    start_date: date | None,
+    end_date: date | None,
+) -> Dict[str, Any]:
+    """
+    Filter Alpha Vantage time-series payload rows by inclusive date range.
+    """
+    if start_date is None and end_date is None:
+        return payload
+
+    series_key = next(
+        (
+            key
+            for key, value in payload.items()
+            if "time series" in key.lower() and isinstance(value, dict)
+        ),
+        None,
+    )
+    if series_key is None:
+        return payload
+
+    series_rows = payload.get(series_key)
+    if not isinstance(series_rows, dict):
+        return payload
+
+    filtered_rows: Dict[str, Any] = {}
+    for raw_date, row in series_rows.items():
+        try:
+            row_date = date.fromisoformat(raw_date)
+        except ValueError:
+            continue
+
+        if start_date is not None and row_date < start_date:
+            continue
+        if end_date is not None and row_date > end_date:
+            continue
+        filtered_rows[raw_date] = row
+
+    return {
+        **payload,
+        series_key: filtered_rows,
+    }
+
+
+def _apply_market_date_filter(payload: Dict[str, Any]) -> Dict[str, Any]:
+    start_date = _parse_iso_date(request.args.get("start_date"), "start_date")
+    end_date = _parse_iso_date(request.args.get("end_date"), "end_date")
+    if start_date and end_date and start_date > end_date:
+        raise ValueError("start_date cannot be after end_date.")
+    return _filter_alpha_vantage_time_series(payload, start_date, end_date)
 
 
 ############################# Endpoints #############################
@@ -193,34 +256,6 @@ def get_symbol_search() -> Response:
     )
 
 
-@app.get("/api/market/time-series/intraday")
-def get_time_series_intraday() -> Response:
-    """
-    Return intraday stock time series from Alpha Vantage.
-    """
-    symbol = request.args.get("symbol")
-    if not symbol:
-        return _json_error("Missing required query parameter: symbol")
-
-    try:
-        payload = get_alpha_vantage_time_series_intraday(
-            symbol=symbol,
-            interval=request.args.get("interval", "5min"),
-            adjusted=_parse_bool(request.args.get("adjusted")),
-            extended_hours=_parse_bool(request.args.get("extended_hours")),
-            month=request.args.get("month"),
-            outputsize=request.args.get("outputsize"),
-            datatype=request.args.get("datatype"),
-            entitlement=request.args.get("entitlement"),
-        )
-    except ValueError as exc:
-        return _json_error(str(exc))
-    except RuntimeError as exc:
-        return _json_error(str(exc), status_code=500)
-
-    return jsonify(payload)
-
-
 @app.get("/api/market/time-series/daily")
 def get_time_series_daily() -> Response:
     """
@@ -237,6 +272,7 @@ def get_time_series_daily() -> Response:
             datatype=request.args.get("datatype"),
             entitlement=request.args.get("entitlement"),
         )
+        payload = _apply_market_date_filter(payload)
     except ValueError as exc:
         return _json_error(str(exc))
     except RuntimeError as exc:
@@ -261,6 +297,7 @@ def get_time_series_daily_adjusted() -> Response:
             datatype=request.args.get("datatype"),
             entitlement=request.args.get("entitlement"),
         )
+        payload = _apply_market_date_filter(payload)
     except ValueError as exc:
         return _json_error(str(exc))
     except RuntimeError as exc:
@@ -283,6 +320,7 @@ def get_time_series_weekly() -> Response:
             symbol=symbol,
             datatype=request.args.get("datatype"),
         )
+        payload = _apply_market_date_filter(payload)
     except ValueError as exc:
         return _json_error(str(exc))
     except RuntimeError as exc:
@@ -305,6 +343,7 @@ def get_time_series_weekly_adjusted() -> Response:
             symbol=symbol,
             datatype=request.args.get("datatype"),
         )
+        payload = _apply_market_date_filter(payload)
     except ValueError as exc:
         return _json_error(str(exc))
     except RuntimeError as exc:
@@ -327,6 +366,7 @@ def get_time_series_monthly() -> Response:
             symbol=symbol,
             datatype=request.args.get("datatype"),
         )
+        payload = _apply_market_date_filter(payload)
     except ValueError as exc:
         return _json_error(str(exc))
     except RuntimeError as exc:
@@ -349,6 +389,7 @@ def get_time_series_monthly_adjusted() -> Response:
             symbol=symbol,
             datatype=request.args.get("datatype"),
         )
+        payload = _apply_market_date_filter(payload)
     except ValueError as exc:
         return _json_error(str(exc))
     except RuntimeError as exc:

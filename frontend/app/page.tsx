@@ -6,6 +6,7 @@ import {
   Bot,
   ChartCandlestick,
   Earth,
+  History,
   Newspaper,
   Thermometer,
 } from "lucide-react";
@@ -76,7 +77,6 @@ type NewsResponse = {
 };
 
 type MarketFunction =
-  | "TIME_SERIES_INTRADAY"
   | "TIME_SERIES_DAILY"
   | "TIME_SERIES_DAILY_ADJUSTED"
   | "TIME_SERIES_WEEKLY"
@@ -126,14 +126,12 @@ type AlertRule = {
   detail: string;
 };
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_BACKEND_BASE_URL
+const API_BASE_URL = (process.env.NEXT_PUBLIC_BACKEND_BASE_URL ?? "").replace(/\/$/, "");
 const MAX_MACRO_GRAPHS = 8;
 const MAX_MARKET_GRAPHS = 8;
 const NEWS_ROTATE_MS = 6000;
 
 const MARKET_FUNCTION_OPTIONS: Array<{ value: MarketFunction; label: string }> = [
-  { value: "TIME_SERIES_INTRADAY", label: "Intraday" },
   { value: "TIME_SERIES_DAILY", label: "Daily" },
   { value: "TIME_SERIES_DAILY_ADJUSTED", label: "Daily Adjusted" },
   { value: "TIME_SERIES_WEEKLY", label: "Weekly" },
@@ -143,7 +141,6 @@ const MARKET_FUNCTION_OPTIONS: Array<{ value: MarketFunction; label: string }> =
 ];
 
 const MARKET_ENDPOINTS: Record<MarketFunction, string> = {
-  TIME_SERIES_INTRADAY: "/api/market/time-series/intraday",
   TIME_SERIES_DAILY: "/api/market/time-series/daily",
   TIME_SERIES_DAILY_ADJUSTED: "/api/market/time-series/daily-adjusted",
   TIME_SERIES_WEEKLY: "/api/market/time-series/weekly",
@@ -245,15 +242,13 @@ const alertRules: AlertRule[] = [
   },
 ];
 
-type XAxisGranularity = "day" | "month" | "year";
-
 function chooseXAxisGranularity(xLabels: string[]) {
-  if (xLabels.length < 2) return "day" as XAxisGranularity;
+  if (xLabels.length < 2) return "day";
 
   const start = new Date(`${xLabels[0]}T00:00:00`);
   const end = new Date(`${xLabels[xLabels.length - 1]}T00:00:00`);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    return "month" as XAxisGranularity;
+    return "month";
   }
 
   const spanMs = Math.abs(end.getTime() - start.getTime());
@@ -265,7 +260,7 @@ function chooseXAxisGranularity(xLabels: string[]) {
   return "year";
 }
 
-function formatXAxisDateLabel(rawDate: string, granularity: XAxisGranularity) {
+function formatXAxisDateLabel(rawDate: string, granularity: string) {
   const parsed = new Date(`${rawDate}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return rawDate;
 
@@ -304,9 +299,7 @@ function Sparkline({
 
   const path = points
     .map((point, i) => {
-      const x =
-        padLeft +
-        (points.length > 1 ? (i / (points.length - 1)) * plotWidth : plotWidth / 2);
+      const x = padLeft + (points.length > 1 ? (i / (points.length - 1)) * plotWidth : plotWidth / 2);
       const y = padTop + (1 - (point - min) / spread) * plotHeight;
       return `${i === 0 ? "M" : "L"} ${x} ${y}`;
     })
@@ -535,15 +528,6 @@ function normalizeSeries(observations: Array<{ date: string; value: number }>) {
   };
 }
 
-function toRecentMonthOptions(count = 12) {
-  return Array.from({ length: count }, (_, index) => {
-    const date = new Date();
-    date.setMonth(date.getMonth() - index);
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    return `${date.getFullYear()}-${month}`;
-  });
-}
-
 function toDateInputValue(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -612,16 +596,13 @@ function extractAlphaMetaSymbol(raw: Record<string, unknown>) {
 }
 
 export default function Home() {
-  const recentMonthOptions = toRecentMonthOptions(18);
   const [marketSymbolInput, setMarketSymbolInput] = useState("");
   const [marketSymbolMatches, setMarketSymbolMatches] = useState<SymbolSearchMatch[]>([]);
   const [showMarketMatches, setShowMarketMatches] = useState(false);
-  const [marketFunction, setMarketFunction] = useState<MarketFunction>("TIME_SERIES_INTRADAY");
-  const [marketInterval, setMarketInterval] = useState<"1min" | "5min" | "15min" | "30min" | "60min">("5min");
-  const [marketAdjusted, setMarketAdjusted] = useState<"default" | "true" | "false">("default");
-  const [marketExtendedHours, setMarketExtendedHours] = useState<"default" | "true" | "false">("default");
-  const [marketMonth, setMarketMonth] = useState("");
-  const [marketEntitlement, setMarketEntitlement] = useState<"default" | "realtime" | "delayed">("default");
+  const [marketFunction, setMarketFunction] = useState<MarketFunction>("TIME_SERIES_DAILY");
+  const [marketEntitlement, setMarketEntitlement] = useState<"realtime" | "delayed">("realtime");
+  const [marketStartDate, setMarketStartDate] = useState("");
+  const [marketEndDate, setMarketEndDate] = useState("");
   const [marketCards, setMarketCards] = useState<MarketSeriesCard[]>([]);
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketError, setMarketError] = useState<string | null>(null);
@@ -644,6 +625,10 @@ export default function Home() {
 
   useEffect(() => {
     const today = new Date();
+    const oneYearAgo = new Date(today);
+    oneYearAgo.setFullYear(today.getFullYear() - 1);
+    setMarketStartDate((current) => current || toDateInputValue(oneYearAgo));
+    setMarketEndDate((current) => current || toDateInputValue(today));
     setStartDate((current) => current || `${today.getFullYear()}-01-01`);
     setEndDate((current) => current || toDateInputValue(today));
   }, []);
@@ -894,28 +879,30 @@ export default function Home() {
       setMarketError("Please select or enter a symbol.");
       return;
     }
+    if (marketStartDate && marketEndDate && marketStartDate > marketEndDate) {
+      setMarketError("Start Date cannot be after End Date.");
+      return;
+    }
 
     setMarketLoading(true);
     setMarketError(null);
+    let requestUrl = "";
 
     try {
       const endpoint = MARKET_ENDPOINTS[marketFunction];
       const query = new URLSearchParams({ symbol });
 
-      if (marketFunction === "TIME_SERIES_INTRADAY") {
-        query.set("interval", marketInterval);
-        if (marketAdjusted !== "default") query.set("adjusted", marketAdjusted);
-        if (marketExtendedHours !== "default") query.set("extended_hours", marketExtendedHours);
-        if (marketMonth) query.set("month", marketMonth);
-        if (marketEntitlement !== "default") query.set("entitlement", marketEntitlement);
-      } else if (
+      if (
         marketFunction === "TIME_SERIES_DAILY" ||
         marketFunction === "TIME_SERIES_DAILY_ADJUSTED"
       ) {
-        if (marketEntitlement !== "default") query.set("entitlement", marketEntitlement);
+        query.set("entitlement", marketEntitlement);
       }
+      if (marketStartDate) query.set("start_date", marketStartDate);
+      if (marketEndDate) query.set("end_date", marketEndDate);
 
-      const response = await fetch(`${API_BASE_URL}${endpoint}?${query.toString()}`);
+      requestUrl = `${API_BASE_URL}${endpoint}?${query.toString()}`;
+      const response = await fetch(requestUrl);
       if (!response.ok) {
         throw new Error("Failed to load market time series.");
       }
@@ -937,11 +924,9 @@ export default function Home() {
       const key = [
         resolvedSymbol,
         marketFunction,
-        marketInterval,
-        marketAdjusted,
-        marketExtendedHours,
-        marketMonth,
         marketEntitlement,
+        marketStartDate,
+        marketEndDate,
       ].join("|");
       const functionLabel =
         MARKET_FUNCTION_OPTIONS.find((option) => option.value === marketFunction)?.label ??
@@ -966,7 +951,10 @@ export default function Home() {
       });
       setShowMarketMatches(false);
     } catch (error) {
-      if (error instanceof Error) {
+      if (error instanceof TypeError) {
+        const target = requestUrl || `${API_BASE_URL}/api/market/...`;
+        setMarketError(`Network error reaching backend at ${target}. Check backend server and CORS.`);
+      } else if (error instanceof Error) {
         setMarketError(error.message || "Unable to load market time series.");
       } else {
         setMarketError("Unable to load market time series.");
@@ -1000,9 +988,9 @@ export default function Home() {
           <p className={styles.sidebarTitle}>Features</p>
           <ul className={styles.moduleList}>
             <li>
-              <a href="#today-market" className={`${styles.moduleItem} ${styles.moduleLink}`}>
+              <a href="#stock-market" className={`${styles.moduleItem} ${styles.moduleLink}`}>
                 <ChartCandlestick className={styles.moduleIcon} aria-hidden />
-                <span>Market</span>
+                <span>Stock Market</span>
               </a>
             </li>
             <li>
@@ -1013,8 +1001,14 @@ export default function Home() {
             </li>
             <li>
               <a href="#timelines" className={`${styles.moduleItem} ${styles.moduleLink}`}>
-                <Newspaper className={styles.moduleIcon} aria-hidden />
+                <History className={styles.moduleIcon} aria-hidden />
                 <span>Timelines</span>
+              </a>
+            </li>
+            <li>
+              <a href="#news-feed" className={`${styles.moduleItem} ${styles.moduleLink}`}>
+                <Newspaper className={styles.moduleIcon} aria-hidden />
+                <span>News Feed</span>
               </a>
             </li>
             <li>
@@ -1040,9 +1034,9 @@ export default function Home() {
 
         <section className={styles.contentGrid}>
           <div className={styles.stack}>
-            <section id="today-market" className={styles.panel}>
+            <section id="stock-market" className={styles.panel}>
               <div className={styles.panelHead}>
-                <h2 className={styles.featureTitle}>Today&apos;s Market</h2>
+                <h2 className={styles.featureTitle}>Stock Market</h2>
               </div>
 
               <div className={styles.macroFilterRow}>
@@ -1096,86 +1090,43 @@ export default function Home() {
                 </label>
 
                 <label className={styles.macroFilterField}>
-                  <span className={styles.macroFilterLabel}>Interval</span>
-                  <select
-                    className={styles.macroSelect}
-                    value={marketInterval}
-                    onChange={(event) =>
-                      setMarketInterval(event.target.value as "1min" | "5min" | "15min" | "30min" | "60min")
-                    }
-                    disabled={marketFunction !== "TIME_SERIES_INTRADAY"}
-                  >
-                    <option value="1min">1min</option>
-                    <option value="5min">5min</option>
-                    <option value="15min">15min</option>
-                    <option value="30min">30min</option>
-                    <option value="60min">60min</option>
-                  </select>
-                </label>
-
-                <label className={styles.macroFilterField}>
-                  <span className={styles.macroFilterLabel}>Adjusted</span>
-                  <select
-                    className={styles.macroSelect}
-                    value={marketAdjusted}
-                    onChange={(event) => setMarketAdjusted(event.target.value as "default" | "true" | "false")}
-                    disabled={marketFunction !== "TIME_SERIES_INTRADAY"}
-                  >
-                    <option value="default">Default</option>
-                    <option value="true">True</option>
-                    <option value="false">False</option>
-                  </select>
-                </label>
-
-                <label className={styles.macroFilterField}>
-                  <span className={styles.macroFilterLabel}>Extended Hours</span>
-                  <select
-                    className={styles.macroSelect}
-                    value={marketExtendedHours}
-                    onChange={(event) => setMarketExtendedHours(event.target.value as "default" | "true" | "false")}
-                    disabled={marketFunction !== "TIME_SERIES_INTRADAY"}
-                  >
-                    <option value="default">Default</option>
-                    <option value="true">True</option>
-                    <option value="false">False</option>
-                  </select>
-                </label>
-
-                <label className={styles.macroFilterField}>
-                  <span className={styles.macroFilterLabel}>Month</span>
-                  <select
-                    className={styles.macroSelect}
-                    value={marketMonth}
-                    onChange={(event) => setMarketMonth(event.target.value)}
-                    disabled={marketFunction !== "TIME_SERIES_INTRADAY"}
-                  >
-                    <option value="">Latest month</option>
-                    {recentMonthOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className={styles.macroFilterField}>
                   <span className={styles.macroFilterLabel}>Entitlement</span>
                   <select
                     className={styles.macroSelect}
                     value={marketEntitlement}
                     onChange={(event) =>
-                      setMarketEntitlement(event.target.value as "default" | "realtime" | "delayed")
+                      setMarketEntitlement(event.target.value as "realtime" | "delayed")
                     }
                     disabled={
-                      marketFunction !== "TIME_SERIES_INTRADAY" &&
                       marketFunction !== "TIME_SERIES_DAILY" &&
                       marketFunction !== "TIME_SERIES_DAILY_ADJUSTED"
                     }
                   >
-                    <option value="default">Default</option>
                     <option value="realtime">Realtime</option>
                     <option value="delayed">Delayed</option>
                   </select>
+                </label>
+
+                <label className={styles.macroFilterField}>
+                  <span className={styles.macroFilterLabel}>Start Date</span>
+                  <input
+                    type="date"
+                    className={styles.macroDateInput}
+                    value={marketStartDate}
+                    onChange={(event) => setMarketStartDate(event.target.value)}
+                    max={marketEndDate || undefined}
+                  />
+                </label>
+
+                <label className={styles.macroFilterField}>
+                  <span className={styles.macroFilterLabel}>End Date</span>
+                  <input
+                    type="date"
+                    className={styles.macroDateInput}
+                    value={marketEndDate}
+                    onChange={(event) => setMarketEndDate(event.target.value)}
+                    min={marketStartDate || undefined}
+                  />
                 </label>
               </div>
 
@@ -1409,7 +1360,7 @@ export default function Home() {
             <section id="news-feed" className={styles.panel}>
               <div className={styles.panelHead}>
                 <h2 className={styles.featureTitle}>
-                  Current News
+                  News Feed
                 </h2>
               </div>
 

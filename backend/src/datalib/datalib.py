@@ -393,7 +393,6 @@ ALPHA_VANTAGE_BASE_URL = "https://www.alphavantage.co/query?"
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
 
 AlphaVantageFunction = Literal[
-    "TIME_SERIES_INTRADAY",
     "TIME_SERIES_DAILY",
     "TIME_SERIES_DAILY_ADJUSTED",
     "TIME_SERIES_WEEKLY",
@@ -416,10 +415,6 @@ def _assert_alpha_vantage_api_key() -> None:
 def _request_alpha_vantage(
     function: AlphaVantageFunction,
     symbol: Optional[str] = None,
-    interval: Optional[Literal["1min", "5min", "15min", "30min", "60min"]] = None,
-    adjusted: Optional[bool] = None,
-    extended_hours: Optional[bool] = None,
-    month: Optional[str] = None,
     outputsize: Optional[Literal["compact", "full"]] = None,
     datatype: Optional[Literal["json", "csv"]] = None,
     entitlement: Optional[Literal["realtime", "delayed"]] = None,
@@ -441,18 +436,6 @@ def _request_alpha_vantage(
     if keywords:
         params["keywords"] = keywords
 
-    if interval is not None:
-        params["interval"] = interval
-
-    if adjusted is not None:
-        params["adjusted"] = adjusted
-
-    if extended_hours is not None:
-        params["extended_hours"] = extended_hours
-
-    if month:
-        params["month"] = month
-
     if outputsize:
         params["outputsize"] = outputsize
 
@@ -465,29 +448,6 @@ def _request_alpha_vantage(
     resp = requests.get(ALPHA_VANTAGE_BASE_URL, params=params, timeout=REQUEST_TIMEOUT)
     resp.raise_for_status()
     return resp.json()
-
-
-def get_alpha_vantage_time_series_intraday(
-    symbol: str,
-    interval: Literal["1min", "5min", "15min", "30min", "60min"] = "5min",
-    adjusted: Optional[bool] = None,
-    extended_hours: Optional[bool] = None,
-    month: Optional[str] = None,
-    outputsize: Optional[Literal["compact", "full"]] = None,
-    datatype: Optional[Literal["json", "csv"]] = None,
-    entitlement: Optional[Literal["realtime", "delayed"]] = None,
-) -> Dict:
-    return _request_alpha_vantage(
-        function="TIME_SERIES_INTRADAY",
-        symbol=symbol,
-        interval=interval,
-        adjusted=adjusted,
-        extended_hours=extended_hours,
-        month=month,
-        outputsize=outputsize,
-        datatype=datatype,
-        entitlement=entitlement,
-    )
 
 
 def get_alpha_vantage_time_series_daily(
