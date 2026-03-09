@@ -127,6 +127,17 @@ def _parse_bool(value: str | None) -> bool | None:
     raise ValueError(f"Invalid boolean value: {value}")
 
 
+def _unique_values_in_order(values: list[float]) -> list[float]:
+    seen: set[float] = set()
+    unique_values: list[float] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique_values.append(value)
+    return unique_values
+
+
 def _json_error(message: str, status_code: int = 400) -> Response:
     response = jsonify({"error": message})
     response.status_code = status_code
@@ -417,7 +428,7 @@ def get_macro_series() -> Response:
     observations = _normalize_observations(raw)
     latest = observations[-1] if observations else None
     previous = observations[-2] if len(observations) > 1 else None
-    points = [row["value"] for row in observations]
+    points = _unique_values_in_order([row["value"] for row in observations])
 
     absolute_change = (
         latest["value"] - previous["value"] if latest is not None and previous is not None else 0.0
@@ -427,7 +438,7 @@ def get_macro_series() -> Response:
         if previous is not None and previous["value"] != 0
         else 0.0
     )
-
+    
     return jsonify(
         {
             "category": category,

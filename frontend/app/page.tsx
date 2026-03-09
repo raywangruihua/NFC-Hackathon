@@ -16,7 +16,7 @@ type SeriesCard = {
   value: string;
   change: string;
   points: number[];
-  xLabels?: string[];
+  xLabels: string[];
   tone: "up" | "down";
   type: "stock" | "macro";
 };
@@ -245,27 +245,7 @@ const alertRules: AlertRule[] = [
   },
 ];
 
-type XAxisGranularity = "day" | "month" | "year";
-
-function chooseXAxisGranularity(xLabels: string[]) {
-  if (xLabels.length < 2) return "day" as XAxisGranularity;
-
-  const start = new Date(`${xLabels[0]}T00:00:00`);
-  const end = new Date(`${xLabels[xLabels.length - 1]}T00:00:00`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-    return "month" as XAxisGranularity;
-  }
-
-  const spanMs = Math.abs(end.getTime() - start.getTime());
-  const dayMs = 24 * 60 * 60 * 1000;
-  const spanDays = spanMs / dayMs;
-
-  if (spanDays <= 92) return "day";
-  if (spanDays <= 365 * 3) return "month";
-  return "year";
-}
-
-function formatXAxisDateLabel(rawDate: string, granularity: XAxisGranularity) {
+function formatXAxisDateLabel(rawDate: string, granularity: string) {
   const parsed = new Date(`${rawDate}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return rawDate;
 
@@ -274,7 +254,7 @@ function formatXAxisDateLabel(rawDate: string, granularity: XAxisGranularity) {
   }
 
   if (granularity === "month") {
-    return Intl.DateTimeFormat("en-US", { month: "short", year: "2-digit" }).format(parsed);
+    return Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).format(parsed);
   }
 
   return Intl.DateTimeFormat("en-US", { year: "numeric" }).format(parsed);
@@ -287,58 +267,66 @@ function Sparkline({
 }: {
   points: number[];
   tone: "up" | "down";
-  xLabels?: string[];
+  xLabels: string[];
 }) {
   const width = 360;
-  const height = 170;
-  const padLeft = 58;
-  const padRight = 16;
-  const padTop = 14;
-  const padBottom = 28;
+  const height = 180;
+  const padLeft = 30;
+  const padRight = 30;
+  const padTop = 15;
+  const padBottom = 30;
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
   const max = Math.max(...points);
   const min = Math.min(...points);
-  const spread = Math.max(max - min, 1);
-  const mid = min + spread / 2;
+  const spread = max - min;
+  const maxTicks = 6;
 
+  if (points.length === 1) {
+    return
+  }
+
+  // format (x, y) positions for path element to draw graph line
   const path = points
     .map((point, i) => {
-      const x =
-        padLeft +
-        (points.length > 1 ? (i / (points.length - 1)) * plotWidth : plotWidth / 2);
-      const y = padTop + (1 - (point - min) / spread) * plotHeight;
+      const x = padLeft + plotWidth / (points.length - 1) * i;
+      const y = padTop + plotHeight * (1 - (point - min) / spread);
       return `${i === 0 ? "M" : "L"} ${x} ${y}`;
     })
     .join(" ");
 
-  const yTicks = [
-    { value: max, y: padTop },
-    { value: mid, y: padTop + plotHeight / 2 },
-    { value: min, y: padTop + plotHeight },
-  ];
+  const tickCount = Math.min(maxTicks, points.length);
 
-  const hasDateLabels = Array.isArray(xLabels) && xLabels.length === points.length;
-  const xAxisGranularity = hasDateLabels ? chooseXAxisGranularity(xLabels) : "month";
-  const midpointIndex = Math.floor((points.length - 1) / 2);
-  const xTicks = [
-    {
-      label: hasDateLabels ? formatXAxisDateLabel(xLabels[0], xAxisGranularity) : "T1",
-      x: padLeft,
-    },
-    {
-      label: hasDateLabels
-        ? formatXAxisDateLabel(xLabels[midpointIndex], xAxisGranularity)
-        : `T${Math.ceil(points.length / 2)}`,
-      x: padLeft + plotWidth / 2,
-    },
-    {
-      label: hasDateLabels
-        ? formatXAxisDateLabel(xLabels[points.length - 1], xAxisGranularity)
-        : `T${points.length}`,
-      x: padLeft + plotWidth,
-    },
-  ];
+  // create y axis data
+  const yTicks = Array.from({ length: tickCount }, (_, index) => {
+    const ratio = index / (tickCount - 1);
+    return {
+      value: max - ratio * spread,
+      y: padTop + ratio * plotHeight,
+    };
+  });
+
+  // determine x axis data type
+  const start = new Date(`${xLabels[0]}T00:00:00`);
+  const end = new Date(`${xLabels[xLabels.length - 1]}T00:00:00`);
+
+  const spanMs = Math.abs(end.getTime() - start.getTime());
+  const dayMs = 24 * 60 * 60 * 1000;
+  const spanDays = spanMs / dayMs;
+
+  var xAxisGranularity = ""
+  if (spanDays < 30 * 5) xAxisGranularity = "day";
+  if (spanDays < 365 * 5) xAxisGranularity = "month";
+  else xAxisGranularity = "year";
+
+  // create x axis data
+  const xTicks = Array.from({ length: tickCount }, (_, tickIndex) => {
+    const ratio = tickIndex / (tickCount - 1);
+    const x = padLeft + ratio * plotWidth;
+    const pointIndex = Math.round(ratio * (points.length - 1));
+    const label = formatXAxisDateLabel(xLabels[pointIndex], xAxisGranularity);
+    return { x, label, pointIndex };
+  });
 
   const formatAxisValue = (value: number) =>
     Intl.NumberFormat("en-US", {
@@ -396,7 +384,7 @@ function Sparkline({
       ))}
 
       {xTicks.map((tick) => (
-        <g key={`xtick-${tick.label}-${tick.x}`}>
+        <g key={`xtick-${tick.pointIndex}-${tick.label}`}>
           <line
             className={styles.sparklineTick}
             x1={tick.x}
