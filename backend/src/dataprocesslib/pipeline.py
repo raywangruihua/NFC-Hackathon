@@ -95,61 +95,55 @@ def _clean_text(text: str) -> str | None:
         return None
     return text.strip()
 
-
-def _raw_payload_ref(url: str) -> str | None:
-    """
-    Placeholder — in production this would be the Supabase Storage path
-    where the raw payload JSON is stored e.g. 'raw/2026/03/04/<event_id>.json'
-    Replace with actual storage write logic when ready.
-    """
-    return f"raw/{url}" if url else None
-
-
 # ── Single article ────────────────────────────────────────────────────────────
-def process_article(raw: dict) -> dict:
+def process_article(raw: dict, storage_path: str) -> dict:
     """
     Transforms a single raw article dict into the unified event schema.
     Gracefully handles null fields — skips NLP if text/title are missing.
     """
-    event_id   = str(uuid.uuid4())
+    event_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc).isoformat()
 
-    title   = raw.get("title")
-    text    = _clean_text(raw.get("text"))
-    source  = raw.get("source")
-    content = text or title  # fall back to title if full text unavailable
+    # ── Extract and clean content ─────────────────────────────────────────────
+    title = raw.get("title")
+    text = _clean_text(raw.get("text"))
+    source = raw.get("source")
+    content = text or title
 
     # ── NLP enrichment (only if content is available) ─────────────────────────
     if content:
         sentiment = predict_one(content)
-        entities  = extract_entities(content)
+        entities = extract_entities(content)
     else:
         sentiment = None
-        entities  = {"tickers": [], "countries": []}
+        entities = {"tickers": [], "countries": []}
 
-    # ── Importance score ──────────────────────────────────────────────────────
+    # ── Derive metadata ───────────────────────────────────────────────────────
+    published_at = raw.get("published_at") or created_at
+    region = _derive_region(raw.get("sourcecountry"))
+    asset_classes = _derive_asset_classes(title, text)
     importance_score = score_importance(
-        source       = source or "",
-        entities     = entities,
-        published_at = raw.get("published_at") or created_at,
+        source=source or "",
+        entities=entities,
+        published_at=published_at,
     )
 
+    # ── Build unified event ───────────────────────────────────────────────────
     return {
-        "event_id":         event_id,
-        "event_type":       "news",
-        "source":           source,
-        "published_at":     raw.get("published_at"),
-        "region":           _derive_region(raw.get("sourcecountry")),
-        "asset_classes":    _derive_asset_classes(title, text),
-        "content":          content,
+        "event_id": event_id,
+        "event_type": "news",
+        "source": source,
+        "published_at": published_at,
+        "region": region,
+        "asset_classes": asset_classes,
+        "content": content,
         "importance_score": importance_score,
-        "entities":         entities,
-        "topic":            None,   # reserved for topic classifier (Step 3)
-        "sentiment":        sentiment,
-        "raw_payload_ref":  _raw_payload_ref(raw.get("url")),
-        "created_at":       created_at,
+        "entities": entities,
+        "topic": None,  # reserved for topic classifier (Step 3)
+        "sentiment": sentiment,
+        "raw_payload_ref": storage_path,
+        "created_at": created_at,
     }
-
 
 # ── Batch ─────────────────────────────────────────────────────────────────────
 def process_batch(articles: list[dict]) -> list[dict]:
@@ -174,20 +168,3 @@ def process_batch(articles: list[dict]) -> list[dict]:
 
     print(f"[pipeline] Processed: {len(results)} | Skipped: {len(skipped)}")
     return results, skipped
-
-
-# ── Entry point ───────────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    with open("gdelt_spider_output.json", encoding="utf-8") as f:
-        articles = json.load(f)
-
-    results, skipped = process_batch(articles)
-
-    with open("output.json", "w", encoding="utf-8") as f:
-        json.dump(results, f, indent=2, default=str)
-
-    if skipped:
-        with open("skipped.json", "w", encoding="utf-8") as f:
-            json.dump(skipped, f, indent=2)
-
-    print(f"[pipeline] Done. Results → output.json | Skipped → skipped.json")

@@ -297,7 +297,7 @@ def search_memory(
     embedding: list[float], top_k: int = 5, content_type: str | None = None
 ) -> list[JsonDict]:
     """Nearest-neighbor semantic search over memory store."""
-    query = supabase.rpc(
+    query = _supabase.rpc(
         "match_memory",
         {
             "query_embedding": embedding,
@@ -320,7 +320,7 @@ def insert_storage(storage_path: str, raw_payload: str) -> str:
     """
     Deprecated.
     """
-    supabase.storage.from_("raw-payloads").upload(
+    _supabase.storage.from_("raw-payloads").upload(
         path=storage_path,
         file=raw_payload.encode("utf-8"),
         file_options={"content-type": "application/json"},
@@ -339,7 +339,7 @@ def ingest_raw_article(raw_payload: str, source: str) -> None:
     storage_path = f"{source}/{str(uuid.uuid4())}.json"
 
     # upload data to raw payloads
-    supabase.storage.from_("raw-payloads").upload(
+    _supabase.storage.from_("raw-payloads").upload(
         path=storage_path,
         file=raw_payload.encode("utf-8"),
         file_options={"content-type": "application/json"},
@@ -355,7 +355,7 @@ def ingest_raw_article(raw_payload: str, source: str) -> None:
 
 
 def get_raw_article(storage_path: str) -> str:
-    file = supabase.storage.from_("raw-payloads").download(storage_path)
+    file = _supabase.storage.from_("raw-payloads").download(storage_path)
     return file.decode("utf-8")
 
 
@@ -402,7 +402,7 @@ def get_full_article(event_id: str) -> JsonDict | None:
         return None
 
     # fetch from Supabase Storage
-    file = supabase.storage.from_("raw-payloads").download(raw_payload_ref)
+    file = _supabase.storage.from_("raw-payloads").download(raw_payload_ref)
     if not isinstance(file, (bytes, bytearray)):
         return None
 
