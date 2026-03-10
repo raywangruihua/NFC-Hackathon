@@ -1030,7 +1030,7 @@ export default function Home() {
           <div className={styles.brandRow}>
             <p className={styles.brand}>DamnMacro</p>
             <Image
-              src="/logo-white.png"
+              src="/logo.png"
               alt="DamnMacro logo"
               width={42}
               height={24}
