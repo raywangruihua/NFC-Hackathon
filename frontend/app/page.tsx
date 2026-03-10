@@ -103,8 +103,6 @@ type SymbolSearchResponse = {
   count: number;
 };
 
-
-
 type HeatCell = {
   theme_id: string;
   topic: string;
@@ -123,7 +121,7 @@ type AlertRule = {
   detail: string;
 };
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_BASE_URL;
+const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_BASE_URL ?? "";
 const MAX_MACRO_GRAPHS = 8;
 const MAX_MARKET_GRAPHS = 8;
 const NEWS_ROTATE_MS = 6000;

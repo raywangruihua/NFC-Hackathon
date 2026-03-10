@@ -5,7 +5,7 @@ import Link from "next/link";
 import styles from "./[themeId]/page.module.css";
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_BACKEND_BASE_URL ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_BACKEND_BASE_URL ?? "";
 
 type ThemeOption = {
   theme_id: string;

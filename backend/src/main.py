@@ -24,10 +24,20 @@ from datalib.datalib import (
 )
 
 load_dotenv()
-FRONT_END_SERVER = os.getenv("FRONT_END_SERVER")
+FRONT_END_URL = os.getenv("FRONT_END_URL", "")
+FRONT_END_URL_REGEX = os.getenv("FRONT_END_URL_REGEX", "")
+
+
+def _load_cors_origins() -> list[str]:
+    origins = [origin.strip() for origin in FRONT_END_URL.split(",") if origin.strip()]
+    if FRONT_END_URL_REGEX.strip():
+        origins.append(FRONT_END_URL_REGEX.strip())
+    if not origins:
+        origins = ["http://localhost:3000"]
+    return origins
 
 app = Flask(__name__)
-CORS(app, origins=FRONT_END_SERVER)
+CORS(app, origins=_load_cors_origins())
 
 
 ########################## Helper functions ##########################
