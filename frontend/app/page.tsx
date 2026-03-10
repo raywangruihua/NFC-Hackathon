@@ -1402,10 +1402,17 @@ export default function Home() {
                 {!newsLoading && !newsError && newsArticles.length > 0 ? (
                   <div className={styles.newsTrack}>
                     {newsArticles.map((article) => (
+                      <Link
+                      key={article.id}
+                      href={`/event/${article.id}`}
+                      target="_blank"
+                      className={styles.timelineEventLink}
+                      >
                       <article key={article.id} className={styles.newsCard}>
                         <p className={styles.newsTitle}>{article.title}</p>
                         <p className={styles.newsDescription}>{article.description}</p>
                       </article>
+                      </Link>
                     ))}
                   </div>
                 ) : null}
