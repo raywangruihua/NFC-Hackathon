@@ -75,6 +75,16 @@ function formatDate(raw: string | null) {
   }).format(parsed);
 }
 
+function truncateString(str: string, maxLength: number) {
+  if (str.length > maxLength) {
+    // If the string is too long, cut it and add "..."
+    return str.slice(0, maxLength - 3) + '...'; 
+  } else {
+    // Otherwise, return the original string
+    return str;
+  }
+}
+
 export default function TimelinePage() {
   const params = useParams();
   const router = useRouter();
@@ -265,8 +275,13 @@ export default function TimelinePage() {
               ) : (
                 <div className={styles.timelineList}>
                   {events.map((ev) => (
-                    <article
+                    <Link
                       key={ev.event_id}
+                      href={`/event/${ev.event_id}`}
+                      target="_blank"
+                      className={styles.timelineEventLink}
+                    >
+                    <article
                       className={styles.timelineEvent}
                     >
                       <span className={styles.timelineDot} />
@@ -288,7 +303,7 @@ export default function TimelinePage() {
                         ) : null}
                       </div>
                       <p className={styles.timelineTitle}>{ev.title}</p>
-                      <p className={styles.timelineText}>{ev.text}</p>
+                      <p className={styles.timelineText}>{truncateString(ev.text, 600)}</p>
                       <div className={styles.timelineFooter}>
                         <span className={styles.timelineSource}>
                           Source: {ev.source}
@@ -300,6 +315,7 @@ export default function TimelinePage() {
                         ) : null}
                       </div>
                     </article>
+                    </Link>
                   ))}
                 </div>
               )}

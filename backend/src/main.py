@@ -14,7 +14,7 @@ CURRENT_DIR = Path(__file__).resolve().parent
 if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 
-from databaselib.db import get_active_themes, get_events, get_events_for_theme, get_theme_by_id
+from databaselib.db import get_active_themes, get_events, get_events_for_theme, get_full_article, get_theme_by_id
 
 
 from datalib.datalib import (
@@ -591,6 +591,66 @@ def get_theme_timeline(theme_id: str) -> Response:
             ],
         }
     )
+
+
+@app.get("/api/events/<event_id>/article")
+def get_event_article(event_id: str) -> Response:
+    """
+    Return full article content for an event.
+    Fetches the raw payload from Supabase Storage using raw_payload_ref.
+    """
+    import json as _json
+
+    try:
+        result = get_full_article(event_id)
+    except Exception as exc:
+        return _json_error(f"Failed to fetch article: {exc}", status_code=500)
+
+    if result is None:
+        return _json_error("Event not found.", status_code=404)
+
+    event_row = result.get("event")
+    raw_content_str = result.get("raw_content")
+
+    if raw_content_str is None:
+        return jsonify({
+            "error": "Article content unavailable.",
+            "error_code": "no_raw_payload",
+            "event": {
+                "event_id": event_row.get("event_id"),
+                "source": event_row.get("source") or "Unknown",
+                "published_at": event_row.get("published_at"),
+                "content": event_row.get("content") or "",
+                "sentiment": event_row.get("sentiment"),
+                "importance_score": float(event_row.get("importance_score") or 0),
+                "region": event_row.get("region"),
+                "asset_classes": event_row.get("asset_classes") or [],
+                "topic": event_row.get("topic"),
+            },
+        }), 404
+
+    # Parse raw content JSON
+    try:
+        raw_payload = _json.loads(raw_content_str)
+    except _json.JSONDecodeError:
+        raw_payload = {"raw_text": raw_content_str}
+
+    return jsonify({
+        "event": {
+            "event_id": event_row.get("event_id"),
+            "source": event_row.get("source") or "Unknown",
+            "published_at": event_row.get("published_at"),
+            "content": event_row.get("content") or "",
+            "sentiment": event_row.get("sentiment"),
+            "importance_score": float(event_row.get("importance_score") or 0),
+            "region": event_row.get("region"),
+            "asset_classes": event_row.get("asset_classes") or [],
+            "topic": event_row.get("topic"),
+        },
+        "article": raw_payload,
+    })
+
+
 
 @app.get("/api/news")
 def get_news() -> Response:

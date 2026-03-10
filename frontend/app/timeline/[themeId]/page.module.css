@@ -242,6 +242,22 @@
   padding: 0.75rem;
 }
 
+.timelineEventLink {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.timelineEventLink:hover .timelineEvent {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--accent);
+}
+
+.timelineEventLink:hover {
+  transform: translateX(2px);
+}
+
 .timelineDot {
   position: absolute;
   left: -0.95rem;
