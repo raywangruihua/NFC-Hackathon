@@ -9,6 +9,7 @@ import {
   Earth,
   History,
   Newspaper,
+  SquareX,
   Thermometer,
 } from "lucide-react";
 import styles from "./page.module.css";
@@ -127,6 +128,8 @@ const MAX_MACRO_GRAPHS = 8;
 const MAX_MARKET_GRAPHS = 8;
 const NEWS_ROTATE_MS = 6000;
 const MAX_SPARKLINE_TICKS = 6;
+const MARKET_CARDS_CACHE_KEY = "nfc.marketCards.v1";
+const MACRO_CARDS_CACHE_KEY = "nfc.macroCards.v1";
 
 const MARKET_FUNCTION_OPTIONS: Array<{ value: MarketFunction; label: string }> = [
   { value: "TIME_SERIES_DAILY", label: "Daily" },
@@ -207,8 +210,8 @@ function chooseXAxisGranularity(xLabels: string[]) {
   const dayMs = 24 * 60 * 60 * 1000;
   const spanDays = spanMs / dayMs;
 
-  if (spanDays <= 3 * 30) return "day";
   if (spanDays <= 365) return "month";
+  if (spanDays <= 5 * 365) return "month-year";
   return "year";
 }
 
@@ -216,12 +219,12 @@ function formatXAxisDateLabel(rawDate: string, granularity: string) {
   const parsed = new Date(`${rawDate}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return rawDate;
 
-  if (granularity === "day") {
-    return Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(parsed);
+  if (granularity === "month") {
+    return Intl.DateTimeFormat("en-US", { month: "short" }).format(parsed);
   }
 
-  if (granularity === "month") {
-    return Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" }).format(parsed);
+  if (granularity === "month-year") {
+    return Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).format(parsed);
   }
 
   return Intl.DateTimeFormat("en-US", { year: "numeric" }).format(parsed);
@@ -245,30 +248,31 @@ function Sparkline({
   xLabels?: string[];
 }) {
   const width = 360;
-  const height = 170;
-  const padLeft = 58;
-  const padRight = 16;
-  const padTop = 14;
-  const padBottom = 28;
+  const height = 180;
+  const padLeft = 50;
+  const padRight = 50;
+  const padTop = 10;
+  const padBottom = 30;
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
   const max = Math.max(...points);
   const min = Math.min(...points);
   const valueRange = max - min;
-  const spread = Math.max(valueRange, 1);
+  const fallbackRange = Math.max(Math.abs(max) * 0.01, 1e-6);
+  const paddedMin = valueRange === 0 ? max - fallbackRange / 2 : min;
+  const paddedMax = valueRange === 0 ? max + fallbackRange / 2 : max;
+  const spread = paddedMax - paddedMin;
   const tickFractions = buildTickFractions(points.length);
 
   const path = points.map((point, i) => {
-      const x =
-        padLeft +
-        (points.length > 1 ? (i / (points.length - 1)) * plotWidth : plotWidth / 2);
-      const y = padTop + (1 - (point - min) / spread) * plotHeight;
+      const x = padLeft + (points.length > 1 ? (i / (points.length - 1)) * plotWidth : plotWidth / 2);
+      const y = padTop + (1 - (point - paddedMin) / spread) * plotHeight;
       return `${i === 0 ? "M" : "L"} ${x} ${y}`;
     })
     .join(" ");
-
+  
   const yTicks = tickFractions.map((fraction, index) => {
-    const value = valueRange === 0 ? max : max - fraction * valueRange;
+    const value = paddedMax - fraction * spread;
     const y = padTop + fraction * plotHeight;
     return { index, value, y };
   });
@@ -285,11 +289,16 @@ function Sparkline({
     };
   });
 
-  const formatAxisValue = (value: number) =>
-    Intl.NumberFormat("en-US", {
-      notation: "compact",
-      maximumFractionDigits: 1,
-    }).format(value);
+  const axisFractionDigits =
+    spread < 0.01 ? 6 : spread < 0.1 ? 5 : spread < 1 ? 4 : spread < 10 ? 3 : spread < 1000 ? 2 : 0;
+
+  const axisFormatter = new Intl.NumberFormat("en-US", {
+    notation: "standard",
+    minimumFractionDigits: axisFractionDigits,
+    maximumFractionDigits: axisFractionDigits,
+  });
+
+  const formatAxisValue = (value: number) => axisFormatter.format(value);
 
   return (
     <svg
@@ -396,8 +405,6 @@ function heatToneStyle(score: number): CSSProperties {
 function alertToneClass(status: AlertRule["status"]) {
   return status === "Breached" ? styles.alertBreached : styles.alertWatching;
 }
-
-
 
 function toLabel(value: string) {
   const tokenMap: Record<string, string> = {
@@ -565,6 +572,7 @@ export default function Home() {
   const [macroCards, setMacroCards] = useState<MacroSeriesCard[]>([]);
   const [macroLoading, setMacroLoading] = useState(false);
   const [macroError, setMacroError] = useState<string | null>(null);
+  const [cardsHydrated, setCardsHydrated] = useState(false);
 
   const [heatCells, setHeatCells] = useState<HeatCell[]>([]);
   const [heatLoading, setHeatLoading] = useState(false);
@@ -574,6 +582,48 @@ export default function Home() {
   const [newsError, setNewsError] = useState<string | null>(null);
   const [activeNewsIndex, setActiveNewsIndex] = useState(0);
   const newsViewportRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    try {
+      const marketCached = window.localStorage.getItem(MARKET_CARDS_CACHE_KEY);
+      if (marketCached) {
+        const parsed = JSON.parse(marketCached) as unknown;
+        if (Array.isArray(parsed)) {
+          setMarketCards(parsed as MarketSeriesCard[]);
+        }
+      }
+
+      const macroCached = window.localStorage.getItem(MACRO_CARDS_CACHE_KEY);
+      if (macroCached) {
+        const parsed = JSON.parse(macroCached) as unknown;
+        if (Array.isArray(parsed)) {
+          setMacroCards(parsed as MacroSeriesCard[]);
+        }
+      }
+    } catch {
+      // Ignore cache read errors and keep in-memory defaults.
+    } finally {
+      setCardsHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!cardsHydrated) return;
+    try {
+      window.localStorage.setItem(MARKET_CARDS_CACHE_KEY, JSON.stringify(marketCards));
+    } catch {
+      // Ignore cache write errors.
+    }
+  }, [cardsHydrated, marketCards]);
+
+  useEffect(() => {
+    if (!cardsHydrated) return;
+    try {
+      window.localStorage.setItem(MACRO_CARDS_CACHE_KEY, JSON.stringify(macroCards));
+    } catch {
+      // Ignore cache write errors.
+    }
+  }, [cardsHydrated, macroCards]);
 
   useEffect(() => {
     const today = new Date();
@@ -966,6 +1016,14 @@ export default function Home() {
     }
   };
 
+  const handleRemoveMarketCard = (marketKey: string) => {
+    setMarketCards((previousCards) => previousCards.filter((card) => card.marketKey !== marketKey));
+  };
+
+  const handleRemoveMacroCard = (indicatorKey: string) => {
+    setMacroCards((previousCards) => previousCards.filter((card) => card.indicatorKey !== indicatorKey));
+  };
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
@@ -1143,12 +1201,20 @@ export default function Home() {
 
               {marketCards.length === 0 ? (
                 <p className={styles.macroEmpty}>
-                  Search to generate market graphs.
+                  Search to generate graphs. (Currently limited to 25 requests per day)
                 </p>
               ) : (
                 <div className={styles.seriesGrid}>
                   {marketCards.map((card) => (
                     <article key={card.marketKey} className={styles.seriesCard}>
+                      <button
+                        type="button"
+                        className={styles.seriesCloseButton}
+                        onClick={() => handleRemoveMarketCard(card.marketKey)}
+                        aria-label={`Close ${card.name} graph`}
+                      >
+                        <SquareX size={14} aria-hidden />
+                      </button>
                       <div className={styles.seriesTop}>
                         <div>
                           <p className={styles.seriesName}>{card.name}</p>
@@ -1173,7 +1239,7 @@ export default function Home() {
 
             <section id="macro-indicators" className={styles.panel}>
               <div className={styles.panelHead}>
-                <h2 className={styles.featureTitle}>Today&apos;s Macroeconomic Indicators</h2>
+                <h2 className={styles.featureTitle}>Macroeconomic Indicators</h2>
                 <span className={styles.annotation}>
                   TODO: Add global/country expansion (currently USA only)
                 </span>
@@ -1284,6 +1350,14 @@ export default function Home() {
                 <div className={styles.seriesGrid}>
                   {macroCards.map((card) => (
                     <article key={card.indicatorKey} className={styles.seriesCard}>
+                      <button
+                        type="button"
+                        className={styles.seriesCloseButton}
+                        onClick={() => handleRemoveMacroCard(card.indicatorKey)}
+                        aria-label={`Close ${card.name} graph`}
+                      >
+                        <SquareX size={14} aria-hidden />
+                      </button>
                       <div className={styles.seriesTop}>
                         <div>
                           <p className={styles.seriesName}>{card.name}</p>
