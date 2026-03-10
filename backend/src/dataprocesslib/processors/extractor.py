@@ -15,7 +15,7 @@ def extract_entities(text: str) -> dict:
     doc = nlp(text)
 
     countries = list({ent.text for ent in doc.ents if ent.label_ == "GPE"})
-    tickers   = list(set(re.findall(r'\b[A-Z]{1,5}\b', text)) & TICKER_SET)
+    tickers   = list(set(re.findall(r'\b[A-Z]{2,5}\b', text)) & TICKER_SET)
 
     return {
         "countries": countries,
