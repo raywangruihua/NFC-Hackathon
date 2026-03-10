@@ -57,7 +57,7 @@ function sentimentToneClass(sentiment: string | null) {
 
 function heatBadgeStyle(score: number): CSSProperties {
   const clamped = Math.max(0, Math.min(100, score));
-  const hue = (clamped / 100) * 120;
+  const hue = (1 - clamped / 100) * 120;
   return {
     backgroundColor: `hsl(${hue}, 100%, 30%)`,
     borderColor: `hsl(${hue}, 100%, 40%)`,
@@ -216,11 +216,11 @@ export default function TimelinePage() {
                 </div>
                 <div
                   className={styles.heatBadge}
-                  style={heatBadgeStyle(themeData.heat_score * 100)}
+                  style={heatBadgeStyle(themeData.heat_score)}
                 >
                   <span className={styles.heatBadgeLabel}>Heat</span>
                   <span className={styles.heatBadgeValue}>
-                    {(themeData.heat_score * 100).toFixed(0)}
+                    {(themeData.heat_score).toFixed(0)}
                   </span>
                 </div>
               </div>

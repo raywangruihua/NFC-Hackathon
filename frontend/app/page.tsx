@@ -8,6 +8,7 @@ import {
   ChartCandlestick,
   Earth,
   History,
+  Newspaper,
   Thermometer,
 } from "lucide-react";
 import styles from "./page.module.css";
@@ -121,8 +122,7 @@ type AlertRule = {
   detail: string;
 };
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_BACKEND_BASE_URL ?? "http://localhost:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_BASE_URL;
 const MAX_MACRO_GRAPHS = 8;
 const MAX_MARKET_GRAPHS = 8;
 const NEWS_ROTATE_MS = 6000;
@@ -145,24 +145,6 @@ const MARKET_ENDPOINTS: Record<MarketFunction, string> = {
   TIME_SERIES_MONTHLY: "/api/market/time-series/monthly",
   TIME_SERIES_MONTHLY_ADJUSTED: "/api/market/time-series/monthly-adjusted",
 };
-
-
-
-// Placeholder theme heat data
-/*
-const heatCells: HeatCell[] = [
-  { topic: "Rate Cuts", score: 4 },
-  { topic: "AI Capex", score: 10 },
-  { topic: "Energy Shock", score: 20 },
-  { topic: "Fiscal Risk", score: 30 },
-  { topic: "China Demand", score: 40 },
-  { topic: "Supply Chain", score: 50 },
-  { topic: "Bank Stress", score: 60 },
-  { topic: "Housing", score: 70 },
-  { topic: "USD Strength", score: 9110 },
-];
-*/
-
 
 // Placeholder chatbot example 
 const chatMessages: ChatMessage[] = [
@@ -1009,9 +991,9 @@ export default function Home() {
               </a>
             </li>
             <li>
-              <a href="/timeline" className={`${styles.moduleItem} ${styles.moduleLink}`}>
-                <History className={styles.moduleIcon} aria-hidden />
-                <span>Timelines</span>
+              <a href="#news-feed" className={`${styles.moduleItem} ${styles.moduleLink}`}>
+                <Newspaper className={styles.moduleIcon} aria-hidden />
+                <span>News Feed</span>
               </a>
             </li>
             <li>
@@ -1030,6 +1012,12 @@ export default function Home() {
               <a href="#notifications" className={`${styles.moduleItem} ${styles.moduleLink}`}>
                 <Bell className={styles.moduleIcon} aria-hidden />
                 <span>Alerts</span>
+              </a>
+            </li>
+            <li>
+              <a href="/timeline" className={`${styles.moduleItem} ${styles.moduleLink}`}>
+                <History className={styles.moduleIcon} aria-hidden />
+                <span>Timelines</span>
               </a>
             </li>
           </ul>
