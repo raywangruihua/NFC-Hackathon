@@ -29,7 +29,8 @@ Notifications
 
 - Users can set thresholds for themes that create alerts when exceeded
 
-Timeline
+Theme Tracker
 
 - Displays notable events related to a theme on a timeline
-- Compacts events into single summaries for themes tracked over long periods of time
+- AI analysis on recommendations to do in reaction to a theme.
+- Cross-Asset Implications showing how events in a theme might affect other sectors/assets.
