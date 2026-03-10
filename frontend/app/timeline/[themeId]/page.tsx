@@ -44,6 +44,18 @@ type ThemeOption = {
   heat_score: number;
 };
 
+type ChainStep = {
+  order: number;
+  implication: string;
+  asset_class: string;
+  direction: "bullish" | "bearish" | "neutral";
+};
+
+type ImplicationChain = {
+  trigger: string;
+  steps: ChainStep[];
+};
+
 function impactToneClass(impact: TimelineEvent["impact"]) {
   if (impact === "High") return styles.impactHigh;
   if (impact === "Medium") return styles.impactMedium;
@@ -102,6 +114,12 @@ export default function TimelinePage() {
   const [analysisLoading, setAnalysisLoading] = useState(true);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
+  const [chains, setChains] = useState<ImplicationChain[]>([]);
+  const [chainsGeneratedAt, setChainsGeneratedAt] = useState<string | null>(null);
+  const [chainsCached, setChainsCached] = useState(false);
+  const [chainsLoading, setChainsLoading] = useState(true);
+  const [chainsError, setChainsError] = useState<string | null>(null);
+
   const [themeOptions, setThemeOptions] = useState<ThemeOption[]>([]);
   const [themesLoading, setThemesLoading] = useState(true);
   const [themesLoadedOnce, setThemesLoadedOnce] = useState(false);
@@ -116,7 +134,7 @@ export default function TimelinePage() {
         const res = await fetch(`${API_BASE_URL}/api/themes`, {
           signal: controller.signal,
         });
-        if (!res.ok) throw new Error("Hit request limit.");
+        if (!res.ok) throw new Error("Failed to load themes.");
         const data = (await res.json()) as ThemeOption[];
         setThemeOptions(data);
         setThemesLoadedOnce(true);
@@ -148,7 +166,7 @@ export default function TimelinePage() {
         );
         if (!res.ok) {
           if (res.status === 404) throw new Error("Theme not found.");
-          throw new Error("Failed to load timeline.");
+          throw new Error("Failed to load theme data.");
         }
 
         const data = (await res.json()) as TimelineResponse;
@@ -157,7 +175,7 @@ export default function TimelinePage() {
       } catch (err) {
         if (err instanceof DOMException && err.name === "AbortError") return;
         setError(
-          err instanceof Error ? err.message : "Unable to load timeline."
+          err instanceof Error ? err.message : "Unable to load theme data."
         );
         setThemeData(null);
         setEvents([]);
@@ -177,6 +195,11 @@ export default function TimelinePage() {
     setAnalysisCached(false);
     setAnalysisLoading(true);
     setAnalysisError(null);
+    setChainsLoading(true);
+    setChains([]);
+    setChainsGeneratedAt(null);
+    setChainsCached(false);
+    setChainsError(null);
   }, [themeId]);
 
   // Fetch LLM analysis (parallel with timeline)
@@ -194,7 +217,7 @@ export default function TimelinePage() {
           { signal: controller.signal }
         );
         if (!res.ok) {
-          throw new Error("Failed to load analysis.");
+          throw new Error("Hit rate limit.");
         }
         const data = await res.json();
         setAnalysis(data.analysis ?? null);
@@ -211,6 +234,41 @@ export default function TimelinePage() {
     }
 
     void loadAnalysis();
+    return () => controller.abort();
+  }, [themeId]);
+
+  // Fetch implication chains (parallel)
+  useEffect(() => {
+    if (!themeId) return;
+    const controller = new AbortController();
+
+    async function loadChains() {
+      setChainsLoading(true);
+      setChainsError(null);
+
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/api/themes/${encodeURIComponent(themeId)}/chains`,
+          { signal: controller.signal }
+        );
+        if (!res.ok) {
+          throw new Error("Failed to load chains.");
+        }
+        const data = await res.json();
+        setChains(data.chains ?? []);
+        setChainsGeneratedAt(data.generated_at ?? null);
+        setChainsCached(data.cached ?? false);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setChainsError(
+          err instanceof Error ? err.message : "Unable to load chains."
+        );
+      } finally {
+        setChainsLoading(false);
+      }
+    }
+
+    void loadChains();
     return () => controller.abort();
   }, [themeId]);
 
@@ -272,7 +330,7 @@ export default function TimelinePage() {
 
         {/* Loading / error states */}
         {loading ? (
-          <p className={styles.status}>Loading timeline...</p>
+          <p className={styles.status}>Loading theme data...</p>
         ) : error ? (
           <p className={styles.errorText}>{error}</p>
         ) : themeData ? (
@@ -355,10 +413,72 @@ export default function TimelinePage() {
               )}
             </section>
 
+            {/* Cross-Asset Implication Chains */}
+            <section className={styles.chainsCard}>
+              <div className={styles.analysisHeader}>
+                <h2 className={styles.chainsTitle}>Cross-Asset Implications</h2>
+                {chainsGeneratedAt ? (
+                  <span className={styles.analysisTimestamp}>
+                    Generated: {formatAnalysisTimestamp(chainsGeneratedAt)}
+                    {chainsCached ? " (cached)" : ""}
+                  </span>
+                ) : null}
+              </div>
+
+              {chainsLoading ? (
+                <div className={styles.analysisLoading}>
+                  <div className={styles.analysisShimmer} />
+                  <div className={styles.analysisShimmer} style={{ width: "75%" }} />
+                </div>
+              ) : chainsError ? (
+                <p className={styles.analysisErrorText}>{chainsError}</p>
+              ) : chains.length > 0 ? (
+                <div className={styles.chainsList}>
+                  {chains.map((chain, ci) => (
+                    <div key={ci} className={styles.chainRow}>
+                      <div className={styles.chainTrigger}>
+                        <span className={styles.chainTriggerIcon}></span>
+                        <span>{chain.trigger}</span>
+                      </div>
+                      <div className={styles.chainSteps}>
+                        {chain.steps
+                          .sort((a, b) => a.order - b.order)
+                          .map((step, si) => (
+                            <div key={si} className={styles.chainStepWrapper}>
+                              {si > 0 ? (
+                                <span className={styles.chainArrow}>→</span>
+                              ) : null}
+                              <div
+                                className={`${styles.chainStep} ${
+                                  step.direction === "bullish"
+                                    ? styles.chainStepBullish
+                                    : step.direction === "bearish"
+                                    ? styles.chainStepBearish
+                                    : styles.chainStepNeutral
+                                }`}
+                              >
+                                <span className={styles.chainAssetTag}>
+                                  {step.asset_class.replace("_", " ")}
+                                </span>
+                                <span className={styles.chainStepLabel}>
+                                  {step.implication}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className={styles.analysisEmptyText}>Loading...</p>
+              )}
+            </section>
+
             {/* Event timeline */}
             <section className={styles.timelineSection}>
               <h2 className={styles.sectionTitle}>
-                Timeline · {events.length} event{events.length !== 1 ? "s" : ""}
+                Events · {events.length} event{events.length !== 1 ? "s" : ""}
               </h2>
 
               {events.length === 0 ? (

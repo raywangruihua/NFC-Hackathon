@@ -14,7 +14,7 @@ CURRENT_DIR = Path(__file__).resolve().parent
 if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 
-from databaselib.db import get_active_themes, get_events, get_events_for_theme, get_full_article, get_theme_analysis, get_theme_by_id, upsert_theme_analysis
+from databaselib.db import get_active_themes, get_events, get_events_for_theme, get_full_article, get_implication_chains, get_theme_analysis, get_theme_by_id, upsert_implication_chains, upsert_theme_analysis
 
 
 from datalib.datalib import (
@@ -696,6 +696,165 @@ Write in a professional, analytical tone suitable for institutional investors. B
 
     return jsonify({
         "analysis": analysis_text,
+        "generated_at": generated_at,
+        "cached": False,
+    })
+
+
+@app.get("/api/themes/<theme_id>/chains")
+def get_theme_chains_endpoint(theme_id: str) -> Response:
+    """
+    Return cross-asset implication chains for a theme.
+    Cached in DB — only regenerated if older than 7 days.
+    Query params:
+        force – bypass cache and regenerate (default: false)
+    """
+    from datetime import timedelta
+    import os as _os
+    import json as _json
+
+    from google import genai
+
+    theme = get_theme_by_id(theme_id)
+    if theme is None:
+        return _json_error("Theme not found.", status_code=404)
+
+    force = request.args.get("force", "false").lower() in ("true", "1", "yes")
+    staleness_days = 7
+
+    # Check cache
+    if not force:
+        cached = get_implication_chains(theme_id)
+        if cached:
+            generated_at = cached.get("generated_at")
+            if generated_at:
+                try:
+                    gen_dt = datetime.fromisoformat(
+                        str(generated_at).replace("Z", "+00:00")
+                    )
+                    age = datetime.now(timezone.utc) - gen_dt
+                    if age < timedelta(days=staleness_days):
+                        chains_data = cached.get("chains", [])
+                        if isinstance(chains_data, str):
+                            chains_data = _json.loads(chains_data)
+                        return jsonify({
+                            "chains": chains_data,
+                            "generated_at": generated_at,
+                            "cached": True,
+                        })
+                except (ValueError, TypeError):
+                    pass
+
+    # Fetch events for the theme
+    raw_rows = get_events_for_theme(theme_id)
+    events = []
+    for row in raw_rows:
+        ev = row.get("events")
+        if ev:
+            events.append(ev)
+
+    if not events:
+        return jsonify({
+            "chains": [],
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "cached": False,
+        })
+
+    # Build prompt
+    events.sort(key=lambda e: e.get("published_at", ""), reverse=True)
+    event_summaries = []
+    for ev in events[:15]:
+        content = (ev.get("content") or "")[:250]
+        source = ev.get("source") or "Unknown"
+        sentiment = ev.get("sentiment") or "unknown"
+        assets = ", ".join(ev.get("asset_classes") or [])
+        event_summaries.append(
+            f"- ({source}, {sentiment}, assets: {assets}) {content}"
+        )
+
+    events_block = "\n".join(event_summaries)
+    prompt = f"""You are a senior cross-asset strategist. Based on these recent events for the theme "{theme.get('title', 'Unknown')}", generate implication chains showing how the macro event propagates across asset classes.
+
+THEME: {theme.get('title', 'Unknown')}
+DESCRIPTION: {theme.get('description') or 'N/A'}
+REGION: {theme.get('region') or 'Global'}
+    
+RECENT EVENTS:
+{events_block}
+
+Generate 1-3 implication chains. Each chain should show how a trigger event cascades across different asset classes (e.g. equities, fixed income, commodities, FX, credit).
+
+Respond with ONLY valid JSON, no markdown, no explanation. Use this exact format:
+[
+  {{
+    "trigger": "Short description of the triggering event",
+    "steps": [
+      {{
+        "order": 1,
+        "implication": "First downstream effect",
+        "asset_class": "commodities",
+        "direction": "bearish"
+      }},
+      {{
+        "order": 2,
+        "implication": "Second downstream effect",
+        "asset_class": "energy",
+        "direction": "bearish"
+      }}
+    ]
+  }}
+]
+
+Rules:
+- Each chain should have 2-4 steps
+- asset_class must be one of: equities, fixed_income, commodities, fx, credit, energy, real_estate, crypto
+- direction must be one of: bullish, bearish, neutral
+- Keep implication text concise (under 15 words)
+- Only output the JSON array, nothing else"""
+
+    try:
+        client = genai.Client(api_key=_os.getenv("GEMINI_API_KEY"))
+        response = client.models.generate_content(
+            model="gemini-3.1-flash-lite-preview",
+            contents=prompt,
+        )
+        raw_text = (response.text or "").strip()
+    except Exception as exc:
+        return _json_error(f"LLM chains unavailable: {exc}", status_code=503)
+
+    # Parse JSON response
+    try:
+        # Strip markdown code fences if present
+        if raw_text.startswith("```"):
+            raw_text = raw_text.split("\n", 1)[1] if "\n" in raw_text else raw_text[3:]
+        if raw_text.endswith("```"):
+            raw_text = raw_text[:-3]
+        raw_text = raw_text.strip()
+
+        chains = _json.loads(raw_text)
+        if not isinstance(chains, list):
+            chains = [chains]
+    except _json.JSONDecodeError:
+        # Try to extract JSON from response
+        start = raw_text.find("[")
+        end = raw_text.rfind("]") + 1
+        if start >= 0 and end > start:
+            try:
+                chains = _json.loads(raw_text[start:end])
+            except _json.JSONDecodeError:
+                chains = []
+        else:
+            chains = []
+
+    # Cache the result
+    try:
+        row = upsert_implication_chains(theme_id, chains)
+        generated_at = row.get("generated_at", datetime.now(timezone.utc).isoformat())
+    except Exception:
+        generated_at = datetime.now(timezone.utc).isoformat()
+
+    return jsonify({
+        "chains": chains,
         "generated_at": generated_at,
         "cached": False,
     })

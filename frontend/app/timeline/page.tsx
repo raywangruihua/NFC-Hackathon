@@ -54,14 +54,14 @@ export default function TimelineIndexPage() {
 
       <main className={styles.main}>
         <section className={styles.themeCard}>
-          <h1 className={styles.sectionTitle}>Timelines — Select a Theme</h1>
+          <h1 className={styles.sectionTitle}>Theme Tracker — Select a Theme</h1>
 
           {loading ? (
             <p className={styles.status}>Loading themes…</p>
           ) : error ? (
             <p className={styles.errorText}>{error}</p>
           ) : themes.length === 0 ? (
-            <p className={styles.emptyState}>No themes available.</p>
+            <p className={styles.emptyState}>Loading...</p>
           ) : (
             <div style={{ display: "grid", gap: "0.5rem" }}>
               {themes.map((theme) => (

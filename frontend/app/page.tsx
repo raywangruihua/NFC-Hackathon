@@ -1073,7 +1073,7 @@ export default function Home() {
             <li>
               <a href="/timeline" className={`${styles.moduleItem} ${styles.moduleLink}`}>
                 <History className={styles.moduleIcon} aria-hidden />
-                <span>Timelines</span>
+                <span>Theme Tracker</span>
               </a>
             </li>
           </ul>

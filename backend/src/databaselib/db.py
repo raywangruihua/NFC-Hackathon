@@ -445,3 +445,34 @@ def upsert_theme_analysis(theme_id: str, analysis: str) -> JsonDict:
         .data[0],
     )
 
+
+# ── Implication chains ───────────────────────────────────────────────────
+
+def get_implication_chains(theme_id: str) -> JsonDict | None:
+    """Return the cached implication chains for a theme, or None."""
+    result = (
+        _require_supabase().table("implication_chains")
+        .select("*")
+        .eq("theme_id", theme_id)
+        .execute()
+    )
+    return cast(JsonDict | None, result.data[0] if result.data else None)
+
+
+def upsert_implication_chains(theme_id: str, chains: list) -> JsonDict:
+    """Insert or update the cached implication chains for a theme."""
+    import json as _json
+    return cast(
+        JsonDict,
+        _require_supabase().table("implication_chains")
+        .upsert(
+            {
+                "theme_id": theme_id,
+                "chains": _json.dumps(chains),
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            on_conflict="theme_id",
+        )
+        .execute()
+        .data[0],
+    )
