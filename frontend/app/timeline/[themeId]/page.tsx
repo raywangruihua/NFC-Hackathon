@@ -3,6 +3,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import ReactMarkdown from "react-markdown";
 import styles from "./page.module.css";
 
 const API_BASE_URL =
@@ -95,6 +96,12 @@ export default function TimelinePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const [analysis, setAnalysis] = useState<string | null>(null);
+  const [analysisGeneratedAt, setAnalysisGeneratedAt] = useState<string | null>(null);
+  const [analysisCached, setAnalysisCached] = useState(false);
+  const [analysisLoading, setAnalysisLoading] = useState(true);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+
   const [themeOptions, setThemeOptions] = useState<ThemeOption[]>([]);
   const [themesLoading, setThemesLoading] = useState(true);
   const [themesLoadedOnce, setThemesLoadedOnce] = useState(false);
@@ -163,11 +170,68 @@ export default function TimelinePage() {
     return () => controller.abort();
   }, [themeId]);
 
+  // Reset analysis state when theme changes
+  useEffect(() => {
+    setAnalysis(null);
+    setAnalysisGeneratedAt(null);
+    setAnalysisCached(false);
+    setAnalysisLoading(true);
+    setAnalysisError(null);
+  }, [themeId]);
+
+  // Fetch LLM analysis (parallel with timeline)
+  useEffect(() => {
+    if (!themeId) return;
+    const controller = new AbortController();
+
+    async function loadAnalysis() {
+      setAnalysisLoading(true);
+      setAnalysisError(null);
+
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/api/themes/${encodeURIComponent(themeId)}/analysis`,
+          { signal: controller.signal }
+        );
+        if (!res.ok) {
+          throw new Error("Failed to load analysis.");
+        }
+        const data = await res.json();
+        setAnalysis(data.analysis ?? null);
+        setAnalysisGeneratedAt(data.generated_at ?? null);
+        setAnalysisCached(data.cached ?? false);
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setAnalysisError(
+          err instanceof Error ? err.message : "Unable to load analysis."
+        );
+      } finally {
+        setAnalysisLoading(false);
+      }
+    }
+
+    void loadAnalysis();
+    return () => controller.abort();
+  }, [themeId]);
+
   const handleThemeChange = (nextThemeId: string) => {
     if (nextThemeId && nextThemeId !== themeId) {
       router.push(`/timeline/${nextThemeId}`);
     }
   };
+
+  function formatAnalysisTimestamp(raw: string | null) {
+    if (!raw) return "";
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return raw;
+    return Intl.DateTimeFormat("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(parsed);
+  }
 
   return (
     <div className={styles.page}>
@@ -260,6 +324,35 @@ export default function TimelinePage() {
                   </span>
                 ) : null}
               </div>
+            </section>
+
+            {/* AI Analysis */}
+            <section className={styles.analysisCard}>
+              <div className={styles.analysisHeader}>
+                <h2 className={styles.analysisTitle}>🤖 AI Analysis</h2>
+                {analysisGeneratedAt ? (
+                  <span className={styles.analysisTimestamp}>
+                    Generated: {formatAnalysisTimestamp(analysisGeneratedAt)}
+                    {analysisCached ? " (cached)" : ""}
+                  </span>
+                ) : null}
+              </div>
+
+              {analysisLoading ? (
+                <div className={styles.analysisLoading}>
+                  <div className={styles.analysisShimmer} />
+                  <div className={styles.analysisShimmer} style={{ width: "85%" }} />
+                  <div className={styles.analysisShimmer} style={{ width: "70%" }} />
+                </div>
+              ) : analysisError ? (
+                <p className={styles.analysisErrorText}>{analysisError}</p>
+              ) : analysis ? (
+                <div className={styles.analysisBody}>
+                  <ReactMarkdown>{analysis}</ReactMarkdown>
+                </div>
+              ) : (
+                <p className={styles.analysisEmptyText}>Loading...</p>
+              )}
             </section>
 
             {/* Event timeline */}

@@ -413,3 +413,35 @@ def get_full_article(event_id: str) -> JsonDict | None:
         return None
 
     return {"event": cast(JsonDict, event_row), "raw_content": file.decode("utf-8")}
+
+
+# ── Theme analyses ───────────────────────────────────────────────────────
+
+def get_theme_analysis(theme_id: str) -> JsonDict | None:
+    """Return the cached LLM analysis for a theme, or None."""
+    result = (
+        _require_supabase().table("theme_analyses")
+        .select("*")
+        .eq("theme_id", theme_id)
+        .execute()
+    )
+    return cast(JsonDict | None, result.data[0] if result.data else None)
+
+
+def upsert_theme_analysis(theme_id: str, analysis: str) -> JsonDict:
+    """Insert or update the cached LLM analysis for a theme."""
+    return cast(
+        JsonDict,
+        _require_supabase().table("theme_analyses")
+        .upsert(
+            {
+                "theme_id": theme_id,
+                "analysis": analysis,
+                "generated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            on_conflict="theme_id",
+        )
+        .execute()
+        .data[0],
+    )
+

@@ -210,6 +210,118 @@
   padding: 1.25rem;
 }
 
+/* ── AI Analysis card ───────────────────────────────────── */
+
+.analysisCard {
+  border: 1px solid rgba(139, 92, 246, 0.35);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.06) 0%, var(--panel-bg) 100%);
+  padding: 1.25rem;
+}
+
+.analysisHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.analysisTitle {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  color: #c4b5fd;
+}
+
+.analysisTimestamp {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 0.15rem 0.45rem;
+}
+
+.analysisBody {
+  font-size: 0.84rem;
+  line-height: 1.65;
+  color: var(--text-soft);
+  word-break: break-word;
+}
+
+.analysisBody h1,
+.analysisBody h2,
+.analysisBody h3 {
+  margin: 1rem 0 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.analysisBody h1 { font-size: 1rem; }
+
+.analysisBody p {
+  margin: 0 0 0.6rem;
+}
+
+.analysisBody ul,
+.analysisBody ol {
+  margin: 0 0 0.6rem;
+  padding-left: 1.25rem;
+}
+
+.analysisBody li {
+  margin-bottom: 0.25rem;
+}
+
+.analysisBody strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.analysisBody em {
+  color: var(--text-muted);
+}
+
+.analysisErrorText {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #fecaca;
+}
+
+.analysisEmptyText {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.analysisLoading {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.analysisShimmer {
+  height: 0.75rem;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0.04) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease infinite;
+  border-radius: 2px;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
 .sectionTitle {
   margin: 0 0 1rem;
   font-size: 0.875rem;

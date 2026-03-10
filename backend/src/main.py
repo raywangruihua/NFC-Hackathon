@@ -14,7 +14,7 @@ CURRENT_DIR = Path(__file__).resolve().parent
 if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
 
-from databaselib.db import get_active_themes, get_events, get_events_for_theme, get_full_article, get_theme_by_id
+from databaselib.db import get_active_themes, get_events, get_events_for_theme, get_full_article, get_theme_analysis, get_theme_by_id, upsert_theme_analysis
 
 
 from datalib.datalib import (
@@ -591,6 +591,114 @@ def get_theme_timeline(theme_id: str) -> Response:
             ],
         }
     )
+
+
+@app.get("/api/themes/<theme_id>/analysis")
+def get_theme_analysis_endpoint(theme_id: str) -> Response:
+    """
+    Return LLM analysis for a theme's recent events.
+    Cached in DB — only regenerated if older than 7 days.
+    Query params:
+        force – bypass cache and regenerate (default: false)
+    """
+    from datetime import timedelta
+    import os as _os
+
+    from google import genai
+
+    theme = get_theme_by_id(theme_id)
+    if theme is None:
+        return _json_error("Theme not found.", status_code=404)
+
+    force = request.args.get("force", "false").lower() in ("true", "1", "yes")
+    staleness_days = 7
+
+    # Check cache
+    if not force:
+        cached = get_theme_analysis(theme_id)
+        if cached:
+            generated_at = cached.get("generated_at")
+            if generated_at:
+                try:
+                    gen_dt = datetime.fromisoformat(
+                        str(generated_at).replace("Z", "+00:00")
+                    )
+                    age = datetime.now(timezone.utc) - gen_dt
+                    if age < timedelta(days=staleness_days):
+                        return jsonify({
+                            "analysis": cached["analysis"],
+                            "generated_at": generated_at,
+                            "cached": True,
+                        })
+                except (ValueError, TypeError):
+                    pass
+
+    # Fetch events for the theme
+    raw_rows = get_events_for_theme(theme_id)
+    events = []
+    for row in raw_rows:
+        ev = row.get("events")
+        if ev:
+            events.append(ev)
+
+    if not events:
+        return jsonify({
+            "analysis": "No events linked to this theme yet. Analysis will be available once events are classified.",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "cached": False,
+        })
+
+    # Build prompt
+    events.sort(key=lambda e: e.get("published_at", ""), reverse=True)
+    event_summaries = []
+    for ev in events[:20]:  # cap at 20 most recent
+        content = (ev.get("content") or "")[:300]
+        source = ev.get("source") or "Unknown"
+        date = ev.get("published_at") or "Unknown date"
+        sentiment = ev.get("sentiment") or "unknown"
+        event_summaries.append(
+            f"- [{date}] ({source}, {sentiment}) {content}"
+        )
+
+    events_block = "\n".join(event_summaries)
+    prompt = f"""You are a senior macroeconomic analyst. Analyze the following recent events related to the theme "{theme.get('title', 'Unknown')}".
+
+THEME DESCRIPTION: {theme.get('description') or 'N/A'}
+REGION: {theme.get('region') or 'Global'}
+ASSET CLASSES: {', '.join(theme.get('asset_classes') or []) or 'N/A'}
+
+RECENT EVENTS:
+{events_block}
+
+Provide a concise analysis (3-5 paragraphs) covering:
+1. Key developments and their significance
+2. Overall sentiment trajectory (risk-on vs risk-off trend)
+3. Potential market implications and what to watch next
+
+Write in a professional, analytical tone suitable for institutional investors. Be specific and reference the events where relevant."""
+
+    try:
+        client = genai.Client(api_key=_os.getenv("GEMINI_API_KEY"))
+        response = client.models.generate_content(
+            model="gemini-3.1-flash-lite-preview",
+            contents=prompt,
+        )
+        analysis_text = response.text or "Analysis generation returned empty."
+    except Exception as exc:
+        return _json_error(f"LLM analysis unavailable: {exc}", status_code=503)
+
+    # Cache the result
+    try:
+        row = upsert_theme_analysis(theme_id, analysis_text)
+        generated_at = row.get("generated_at", datetime.now(timezone.utc).isoformat())
+    except Exception:
+        generated_at = datetime.now(timezone.utc).isoformat()
+
+    return jsonify({
+        "analysis": analysis_text,
+        "generated_at": generated_at,
+        "cached": False,
+    })
 
 
 @app.get("/api/events/<event_id>/article")
