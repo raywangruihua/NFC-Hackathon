@@ -1417,6 +1417,10 @@ export default function Home() {
                   </div>
                 ) : null}
               </div>
+
+              <p className={styles.macroEmpty}>
+                Click to see more
+              </p>
             </section>
 
             <section id="theme-heat" className={styles.panel}>
