@@ -76,14 +76,20 @@ def get_events(
     return cast(list[JsonDict], query.order("published_at", desc=True).execute().data)
 
 
-def insert_event(event: Event) -> JsonDict:
-    result = cast(JsonDict, _require_supabase().table("events").insert(vars(event)).execute().data[0])
+def insert_event(event: Event | dict) -> JsonDict:
+    """Insert processed event into database and classify asynchronously."""
+    # Handle both Event objects and dicts
+    event_data = vars(event) if hasattr(event, '__dict__') else event
+    
+    result = cast(JsonDict, _require_supabase().table("events").insert(event_data).execute().data[0])
+    
     # Auto-classify into themes (fire-and-forget)
     try:
         from analysislib.classify_events import classify_and_link_event
         classify_and_link_event(result)
     except Exception:
         pass
+    
     return result
 
 
