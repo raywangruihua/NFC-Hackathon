@@ -1417,9 +1417,6 @@ export default function Home() {
                 <h2 className={styles.featureTitle}>
                   Trending Themes
                 </h2>
-                <span className={styles.annotation}>
-                  TODO: Retrieve highest heat score themes from database.
-                </span>
               </div>
 
               {heatLoading ? <p className={styles.macroStatus}>Loading theme heat...</p> : null}

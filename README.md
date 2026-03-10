@@ -17,6 +17,7 @@
 
 - FRED API (macroeconomic indicators)
 - GDELT API (news discovery for crawling)
+- Alpha Vantage (stock market data)
 - More macro indicator APIs WIP
 
 ### NLP / AI

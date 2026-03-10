@@ -6,8 +6,30 @@ Team Name: Dammit SWE
 
 ## Project Description
 
-Dammit Macroeconomics Tracker is an AI-powered macro intelligence platform that helps users monitor how global economic events can affect their assets. The system ingests financial news scraped online, then filters and enriches events with extracted entities, sentiment, and importance scoring. Processed events are grouped into evolving macro themes (for example inflation pressure, interest-rate outlook, or geopolitical risk), assigned heat scores, and synced to the frontend for real-time visibility.
+Dammit Macroeconomics Tracker is a macro intelligence dashboard for asset managers. It aggregates financial news into one stream, then uses NLP and LLM classification to extract entities, detect sentiment, score event importance, and map events to persistent macro themes. Each theme has a live heat score and timeline so users can see how topics are heating up or cooling down across regions and asset classes. By replacing manual search and monitoring with automated clustering and risk interpretation, the platform reduces information overload and missed signals.
 
-The backend news scraper 
+Due to limited time, only a simple data pipeline and some features could be implemented. More time is required to finetune NLP and LLM models and increase sources of ingestion. A deployed preview can be viewed at our [website](https://nfc-hackathon.vercel.app/).
 
-The frontend is designed with simplicity in mind, providing a simple UI for users to navigate.
+### Features
+
+News Feed
+
+- Displays articles based on recency and importance scores
+
+Trending themes
+
+- Provides a heatmap of themes configured by the user
+
+Chatbot
+
+- RAG based chatbot that retrieves related articles from database
+- Compresses, labels and stores past sessions which are used for reference in the future
+
+Notifications
+
+- Users can set thresholds for themes that create alerts when exceeded
+
+Timeline
+
+- Displays notable events related to a theme on a timeline
+- Compacts events into single summaries for themes tracked over long periods of time
