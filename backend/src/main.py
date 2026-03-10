@@ -1,12 +1,19 @@
 import os
 import re
 import math
+import sys
+from pathlib import Path
 from datetime import datetime, timezone, date
 from typing import Any, Dict
 
 from flask import Flask, jsonify, request, Response
 from flask_cors import CORS
 from dotenv import load_dotenv
+
+CURRENT_DIR = Path(__file__).resolve().parent
+if str(CURRENT_DIR) not in sys.path:
+    sys.path.insert(0, str(CURRENT_DIR))
+
 from databaselib.db import get_active_themes, get_events, get_events_for_theme, get_theme_by_id
 
 
