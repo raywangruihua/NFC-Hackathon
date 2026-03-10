@@ -1,6 +1,6 @@
 # About
 
-Project title: Dammit Macroeconomics Tracker
+Project title: DamnMacro
 
 Team Name: Dammit SWE
 
