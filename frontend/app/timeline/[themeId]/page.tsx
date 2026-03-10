@@ -329,7 +329,7 @@ export default function TimelinePage() {
             {/* AI Analysis */}
             <section className={styles.analysisCard}>
               <div className={styles.analysisHeader}>
-                <h2 className={styles.analysisTitle}>🤖 AI Analysis</h2>
+                <h2 className={styles.analysisTitle}>AI Analysis</h2>
                 {analysisGeneratedAt ? (
                   <span className={styles.analysisTimestamp}>
                     Generated: {formatAnalysisTimestamp(analysisGeneratedAt)}

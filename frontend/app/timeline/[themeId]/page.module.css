@@ -213,8 +213,8 @@
 /* ── AI Analysis card ───────────────────────────────────── */
 
 .analysisCard {
-  border: 1px solid rgba(139, 92, 246, 0.35);
-  background: linear-gradient(135deg, rgba(139, 92, 246, 0.06) 0%, var(--panel-bg) 100%);
+  border: 1px solid rgba(59, 130, 246, 0.35); /* blue-500 */
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08) 0%, var(--panel-bg) 100%);
   padding: 1.25rem;
 }
 
@@ -232,7 +232,7 @@
   font-size: 0.875rem;
   font-weight: 600;
   letter-spacing: 0.03em;
-  color: #c4b5fd;
+  color: #93c5fd; /* blue-300 */
 }
 
 .analysisTimestamp {
@@ -255,7 +255,7 @@
   margin: 1rem 0 0.4rem;
   font-size: 0.9rem;
   font-weight: 600;
-  color: var(--accent);
+  color: #93c5fd; /* blue-300 */
 }
 
 .analysisBody h1 { font-size: 1rem; }
