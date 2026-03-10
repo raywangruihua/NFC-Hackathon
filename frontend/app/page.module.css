@@ -186,6 +186,7 @@
 }
 
 .seriesCard {
+  position: relative;
   border: 1px solid var(--border);
   border-radius: 0;
   background: var(--panel-bg);
@@ -194,6 +195,7 @@
 
 .seriesTop {
   margin-bottom: 0.5rem;
+  padding-right: 2rem;
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -207,6 +209,38 @@
 
 .seriesMetric {
   text-align: right;
+}
+
+.seriesCloseButton {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  background: transparent;
+  color: var(--feature);
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+.seriesCloseButton svg {
+  width: 100%;
+  height: 100%;
+}
+
+.seriesCloseButton:hover {
+  color: rgba(255, 255, 255, 0.1);
+}
+
+.seriesCloseButton:focus-visible {
+  outline: 2px solid var(--feature);
+  outline-offset: 2px;
 }
 
 .seriesValue {
@@ -650,7 +684,14 @@
   text-align: center;
   gap: 0.2rem;
   color: #f2f2f2;
-  transition: background-color 180ms ease, border-color 180ms ease;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 180ms ease, border-color 180ms ease, filter 180ms ease;
+}
+
+.heatCell:hover {
+  filter: brightness(1.25);
+  border-color: rgba(255, 255, 255, 0.35);
 }
 
 .heatTopic {

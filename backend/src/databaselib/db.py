@@ -10,10 +10,16 @@ from supabase import create_client, Client
 load_dotenv()
 
 url = os.getenv("SUPABASE_URL")
-assert url is not None, "SUPABASE_URL is not set in .env"
 key = os.getenv("SUPABASE_KEY")
-assert key is not None, "SUPABASE_KEY is not set in .env"
-supabase: Client = create_client(url, key)
+_supabase: Client | None = create_client(url, key) if url and key else None
+
+
+def _require_supabase() -> Client:
+    if _supabase is None:
+        raise RuntimeError(
+            "SUPABASE_URL and SUPABASE_KEY must be set in backend environment variables."
+        )
+    return _supabase
 
 JsonDict = dict[str, Any]
 
@@ -42,7 +48,7 @@ class Theme:
     region: str
 
 
-# ── Events ────────────────────────────────────────────────────────────────────
+# â”€â”€ Events â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def get_events(
     topic: str | None = None,
@@ -53,7 +59,7 @@ def get_events(
     """Get events with optional filters. Supports the query pattern:
     'Show all inflation-related US events in last 7 days with importance > 0.8'
     """
-    query = supabase.table("events").select("*")
+    query = _require_supabase().table("events").select("*")
 
     if topic:
         query = query.eq("topic", topic)
@@ -71,13 +77,20 @@ def get_events(
 
 
 def insert_event(event: Event) -> JsonDict:
-    return cast(JsonDict, supabase.table("events").insert(vars(event)).execute().data[0])
+    result = cast(JsonDict, _require_supabase().table("events").insert(vars(event)).execute().data[0])
+    # Auto-classify into themes (fire-and-forget)
+    try:
+        from analysislib.classify_events import classify_and_link_event
+        classify_and_link_event(result)
+    except Exception:
+        pass
+    return result
 
 
-# ── Themes ────────────────────────────────────────────────────────────────────
+# â”€â”€ Themes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def get_active_themes(min_heat: float | None = None) -> list[JsonDict]:
-    query = supabase.table("themes").select("*").eq("status", "active")
+    query = _require_supabase().table("themes").select("*").eq("status", "active")
 
     if min_heat is not None:
         query = query.gte("heat_score", min_heat)
@@ -86,19 +99,20 @@ def get_active_themes(min_heat: float | None = None) -> list[JsonDict]:
 
 
 def get_theme_by_id(theme_id: str) -> JsonDict | None:
-    result = supabase.table("themes").select("*").eq("theme_id", theme_id).execute()
+    result = _require_supabase().table("themes").select("*").eq("theme_id", theme_id).execute()
     return cast(JsonDict | None, result.data[0] if result.data else None)
 
 
-def insert_theme(theme: Theme) -> JsonDict:
-    return cast(JsonDict, supabase.table("themes").insert(vars(theme)).execute().data[0])
+def insert_theme(theme: "Theme | JsonDict") -> JsonDict:
+    data = vars(theme) if isinstance(theme, Theme) else theme
+    return cast(JsonDict, _require_supabase().table("themes").insert(data).execute().data[0])
 
 
 def update_theme(theme_id: str, updates: JsonDict) -> JsonDict:
     return (
         cast(
             JsonDict,
-            supabase.table("themes")
+            _require_supabase().table("themes")
             .update(updates)
             .eq("theme_id", theme_id)
             .execute()
@@ -107,13 +121,13 @@ def update_theme(theme_id: str, updates: JsonDict) -> JsonDict:
     )
 
 
-# ── Event-theme map ───────────────────────────────────────────────────────────
+# â”€â”€ Event-theme map â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def link_event_to_theme(event_id: str, theme_id: str) -> JsonDict:
     return (
         cast(
             JsonDict,
-            supabase.table("event_theme_map")
+            _require_supabase().table("event_theme_map")
             .insert({"event_id": event_id, "theme_id": theme_id})
             .execute()
             .data[0],
@@ -125,7 +139,7 @@ def get_events_for_theme(theme_id: str) -> list[JsonDict]:
     return (
         cast(
             list[JsonDict],
-            supabase.table("event_theme_map")
+            _require_supabase().table("event_theme_map")
             .select("events(*)")
             .eq("theme_id", theme_id)
             .execute()
@@ -134,13 +148,49 @@ def get_events_for_theme(theme_id: str) -> list[JsonDict]:
     )
 
 
-# ── Portfolio exposure ────────────────────────────────────────────────────────
+def get_event_theme_links(event_id: str) -> list[str]:
+    """Return theme_ids already linked to an event (for dedup)."""
+    rows = (
+        _require_supabase().table("event_theme_map")
+        .select("theme_id")
+        .eq("event_id", event_id)
+        .execute()
+        .data
+    )
+    return [r["theme_id"] for r in rows if isinstance(r, dict)]
+
+
+def get_unlinked_events(days: int = 7) -> list[JsonDict]:
+    """Return events from the last N days that have no entry in event_theme_map."""
+    from datetime import timedelta
+
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    all_events = cast(
+        list[JsonDict],
+        _require_supabase().table("events")
+        .select("*")
+        .gte("published_at", since)
+        .order("published_at", desc=True)
+        .execute()
+        .data,
+    )
+
+    linked_rows = cast(
+        list[JsonDict],
+        _require_supabase().table("event_theme_map")
+        .select("event_id")
+        .execute()
+        .data,
+    )
+    linked_ids = {r["event_id"] for r in linked_rows if isinstance(r, dict)}
+
+    return [e for e in all_events if e.get("event_id") not in linked_ids]
 
 def get_portfolio(user_id: str) -> list[JsonDict]:
     return (
         cast(
             list[JsonDict],
-            supabase.table("portfolio_exposure")
+            _require_supabase().table("portfolio_exposure")
             .select("*")
             .eq("user_id", user_id)
             .execute()
@@ -151,18 +201,18 @@ def get_portfolio(user_id: str) -> list[JsonDict]:
 
 def upsert_portfolio_exposure(exposure: JsonDict) -> JsonDict:
     return cast(
-        JsonDict, supabase.table("portfolio_exposure").upsert(exposure).execute().data[0]
+        JsonDict, _require_supabase().table("portfolio_exposure").upsert(exposure).execute().data[0]
     )
 
 
-# ── Risk alerts ───────────────────────────────────────────────────────────────
+# â”€â”€ Risk alerts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def get_unresolved_alerts(user_id: str, severity: str | None = None) -> list[JsonDict]:
     """Get unresolved alerts for a user. Supports the query pattern:
     'Fetch unresolved high-severity alerts for user X'
     """
     query = (
-        supabase.table("risk_alerts")
+        _require_supabase().table("risk_alerts")
         .select("*")
         .eq("user_id", user_id)
         .eq("acknowledged", False)
@@ -180,7 +230,7 @@ def acknowledge_alert(alert_id: str) -> JsonDict:
     return (
         cast(
             JsonDict,
-            supabase.table("risk_alerts")
+            _require_supabase().table("risk_alerts")
             .update(
                 {
                     "acknowledged": True,
@@ -195,16 +245,16 @@ def acknowledge_alert(alert_id: str) -> JsonDict:
 
 
 def insert_alert(alert: JsonDict) -> JsonDict:
-    return cast(JsonDict, supabase.table("risk_alerts").insert(alert).execute().data[0])
+    return cast(JsonDict, _require_supabase().table("risk_alerts").insert(alert).execute().data[0])
 
 
-# ── Recommendations ───────────────────────────────────────────────────────────
+# â”€â”€ Recommendations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def get_recommendations(user_id: str) -> list[JsonDict]:
     return (
         cast(
             list[JsonDict],
-            supabase.table("recommendations")
+            _require_supabase().table("recommendations")
             .select("*")
             .eq("user_id", user_id)
             .order("created_at", desc=True)
@@ -216,11 +266,11 @@ def get_recommendations(user_id: str) -> list[JsonDict]:
 
 def insert_recommendation(recommendation: JsonDict) -> JsonDict:
     return cast(
-        JsonDict, supabase.table("recommendations").insert(recommendation).execute().data[0]
+        JsonDict, _require_supabase().table("recommendations").insert(recommendation).execute().data[0]
     )
 
 
-# ── Memory store ──────────────────────────────────────────────────────────────
+# â”€â”€ Memory store â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def insert_memory(
     content: str, embedding: list[float], content_type: str, metadata: JsonDict
@@ -228,7 +278,7 @@ def insert_memory(
     return (
         cast(
             JsonDict,
-            supabase.table("memory")
+            _require_supabase().table("memory")
             .insert(
                 {
                     "content": content,
@@ -263,7 +313,7 @@ def search_memory(
     return cast(list[JsonDict], result)
 
 
-# ── Storage ──────────────────────────────────────────────────────────────
+# â”€â”€ Storage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @DeprecationWarning
 def insert_storage(storage_path: str, raw_payload: str) -> str:
@@ -296,7 +346,7 @@ def ingest_raw_article(raw_payload: str, source: str) -> None:
     )
 
     # upload entry data to raw ingestions
-    supabase.table("raw_ingestions").insert(
+    _require_supabase().table("raw_ingestions").insert(
         {
             "storage_path": storage_path,
             "source": source,
@@ -314,7 +364,7 @@ def get_unprocessed() -> list[JsonDict]:
     Returns all unprocessed raw articles as list of JSON.
     """
     result = (
-        supabase.table("raw_ingestions")
+        _require_supabase().table("raw_ingestions")
         .select("*")
         .eq("processed", False)
         .order("ingested_at")
@@ -328,7 +378,7 @@ def get_unprocessed() -> list[JsonDict]:
 
 
 def mark_processed(ingestion_id: str, event_id: str) -> None:
-    supabase.table("raw_ingestions").update(
+    _require_supabase().table("raw_ingestions").update(
         {
             "processed": True,
             "processed_at": datetime.now(timezone.utc).isoformat(),
@@ -338,7 +388,7 @@ def mark_processed(ingestion_id: str, event_id: str) -> None:
 
 
 def get_full_article(event_id: str) -> JsonDict | None:
-    event = supabase.table("events").select("*").eq("event_id", event_id).execute()
+    event = _require_supabase().table("events").select("*").eq("event_id", event_id).execute()
     event_data = event.data
     if not isinstance(event_data, list) or not event_data:
         return None

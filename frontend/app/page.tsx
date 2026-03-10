@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties, type ChangeEvent } from "react";
+import Link from "next/link";
 import {
   Bell,
   Bot,
   ChartCandlestick,
   Earth,
+  History,
   Newspaper,
+  SquareX,
   Thermometer,
 } from "lucide-react";
 import styles from "./page.module.css";
@@ -29,28 +32,28 @@ type MarketSeriesCard = SeriesCard & {
   marketKey: string;
 };
 
-type FredCategoryOption = {
+type MacroCategoryOption = {
   key: string;
   label: string;
 };
 
-type FredIndicatorOption = {
+type MacroIndicatorOption = {
   key: string;
   label: string;
   series_id: string;
 };
 
-type FredCategoriesResponse = {
+type MacroCategoriesResponse = {
   country: string;
-  categories: FredCategoryOption[];
+  categories: MacroCategoryOption[];
 };
 
-type FredIndicatorsResponse = {
+type MacroIndicatorsResponse = {
   category: string;
-  indicators: FredIndicatorOption[];
+  indicators: MacroIndicatorOption[];
 };
 
-type FredSeriesResponse = {
+type MacroSeriesResponse = {
   category: string | null;
   indicator: string;
   indicator_label: string;
@@ -76,7 +79,6 @@ type NewsResponse = {
 };
 
 type MarketFunction =
-  | "TIME_SERIES_INTRADAY"
   | "TIME_SERIES_DAILY"
   | "TIME_SERIES_DAILY_ADJUSTED"
   | "TIME_SERIES_WEEKLY"
@@ -101,15 +103,8 @@ type SymbolSearchResponse = {
   count: number;
 };
 
-type TimelineEvent = {
-  date: string;
-  title: string;
-  text: string;
-  source: string;
-  impact: "High" | "Medium" | "Low";
-};
-
 type HeatCell = {
+  theme_id: string;
   topic: string;
   score: number;
 };
@@ -126,14 +121,15 @@ type AlertRule = {
   detail: string;
 };
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_BACKEND_BASE_URL
+const API_BASE_URL = process.env.NEXT_PUBLIC_BACKEND_BASE_URL ?? "";
 const MAX_MACRO_GRAPHS = 8;
 const MAX_MARKET_GRAPHS = 8;
 const NEWS_ROTATE_MS = 6000;
+const MAX_SPARKLINE_TICKS = 6;
+const MARKET_CARDS_CACHE_KEY = "nfc.marketCards.v1";
+const MACRO_CARDS_CACHE_KEY = "nfc.macroCards.v1";
 
 const MARKET_FUNCTION_OPTIONS: Array<{ value: MarketFunction; label: string }> = [
-  { value: "TIME_SERIES_INTRADAY", label: "Intraday" },
   { value: "TIME_SERIES_DAILY", label: "Daily" },
   { value: "TIME_SERIES_DAILY_ADJUSTED", label: "Daily Adjusted" },
   { value: "TIME_SERIES_WEEKLY", label: "Weekly" },
@@ -143,7 +139,6 @@ const MARKET_FUNCTION_OPTIONS: Array<{ value: MarketFunction; label: string }> =
 ];
 
 const MARKET_ENDPOINTS: Record<MarketFunction, string> = {
-  TIME_SERIES_INTRADAY: "/api/market/time-series/intraday",
   TIME_SERIES_DAILY: "/api/market/time-series/daily",
   TIME_SERIES_DAILY_ADJUSTED: "/api/market/time-series/daily-adjusted",
   TIME_SERIES_WEEKLY: "/api/market/time-series/weekly",
@@ -151,51 +146,6 @@ const MARKET_ENDPOINTS: Record<MarketFunction, string> = {
   TIME_SERIES_MONTHLY: "/api/market/time-series/monthly",
   TIME_SERIES_MONTHLY_ADJUSTED: "/api/market/time-series/monthly-adjusted",
 };
-
-// Placeholder timeline data
-const timelineEvents: TimelineEvent[] = [
-  {
-    date: "2026-02-27",
-    title: "Fed signals caution on rate cuts",
-    text: "Policymakers highlighted sticky services inflation and signaled they need more data before easing policy.",
-    source: "FOMC Minutes",
-    impact: "High",
-  },
-  {
-    date: "2026-02-21",
-    title: "Core inflation prints below estimate",
-    text: "Core CPI slowed month-over-month as goods disinflation continued, reducing near-term tightening risk.",
-    source: "BLS Release",
-    impact: "High",
-  },
-  {
-    date: "2026-02-15",
-    title: "Manufacturing PMI re-enters expansion",
-    text: "PMI moved back above 50 on stronger new orders, suggesting a rebound in industrial momentum.",
-    source: "ISM",
-    impact: "Medium",
-  },
-  {
-    date: "2026-02-08",
-    title: "Services inflation shows renewed pressure",
-    text: "Shelter and wage-sensitive categories remained firm, increasing risk that disinflation progress stalls.",
-    source: "NFP Report",
-    impact: "Medium",
-  },
-];
-
-// Placeholder theme heat data
-const heatCells: HeatCell[] = [
-  { topic: "Rate Cuts", score: 88 },
-  { topic: "AI Capex", score: 73 },
-  { topic: "Energy Shock", score: 66 },
-  { topic: "Fiscal Risk", score: 54 },
-  { topic: "China Demand", score: 49 },
-  { topic: "Supply Chain", score: 0 },
-  { topic: "Bank Stress", score: 61 },
-  { topic: "Housing", score: 47 },
-  { topic: "USD Strength", score: 52 },
-];
 
 // Placeholder chatbot example 
 const chatMessages: ChatMessage[] = [
@@ -218,7 +168,7 @@ const chatReasoning = [
 
 // Placeholder sources cited by chatbot when thinking
 const chatSources = [
-  "FRED: 10Y Real Yield",
+  "Macro: 10Y Real Yield",
   "BLS CPI Release",
   "SEC Filings: Selected tech names",
 ];
@@ -245,10 +195,45 @@ const alertRules: AlertRule[] = [
   },
 ];
 
-function formatXAxisDateLabel(rawDate: string) {
+function chooseXAxisGranularity(xLabels: string[]) {
+  if (xLabels.length < 2) return "day";
+
+  const start = new Date(`${xLabels[0]}T00:00:00`);
+  const end = new Date(`${xLabels[xLabels.length - 1]}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return "month";
+  }
+
+  const spanMs = Math.abs(end.getTime() - start.getTime());
+  const dayMs = 24 * 60 * 60 * 1000;
+  const spanDays = spanMs / dayMs;
+
+  if (spanDays <= 365) return "month";
+  if (spanDays <= 5 * 365) return "month-year";
+  return "year";
+}
+
+function formatXAxisDateLabel(rawDate: string, granularity: string) {
   const parsed = new Date(`${rawDate}T00:00:00`);
   if (Number.isNaN(parsed.getTime())) return rawDate;
-  return Intl.DateTimeFormat("en-US", { month: "short", year: "2-digit" }).format(parsed);
+
+  if (granularity === "month") {
+    return Intl.DateTimeFormat("en-US", { month: "short" }).format(parsed);
+  }
+
+  if (granularity === "month-year") {
+    return Intl.DateTimeFormat("en-US", { month: "short", year: "numeric" }).format(parsed);
+  }
+
+  return Intl.DateTimeFormat("en-US", { year: "numeric" }).format(parsed);
+}
+
+function buildTickFractions(pointCount: number, maxTicks = MAX_SPARKLINE_TICKS) {
+  if (pointCount <= 0) return [];
+
+  const tickCount = Math.min(pointCount, Math.max(1, maxTicks));
+  if (tickCount === 1) return [0];
+  return Array.from({ length: tickCount }, (_, idx) => idx / (tickCount - 1));
 }
 
 function Sparkline({
@@ -261,58 +246,57 @@ function Sparkline({
   xLabels?: string[];
 }) {
   const width = 360;
-  const height = 170;
-  const padLeft = 58;
-  const padRight = 16;
-  const padTop = 14;
-  const padBottom = 28;
+  const height = 180;
+  const padLeft = 50;
+  const padRight = 50;
+  const padTop = 10;
+  const padBottom = 30;
   const plotWidth = width - padLeft - padRight;
   const plotHeight = height - padTop - padBottom;
   const max = Math.max(...points);
   const min = Math.min(...points);
-  const spread = Math.max(max - min, 1);
-  const mid = min + spread / 2;
+  const valueRange = max - min;
+  const fallbackRange = Math.max(Math.abs(max) * 0.01, 1e-6);
+  const paddedMin = valueRange === 0 ? max - fallbackRange / 2 : min;
+  const paddedMax = valueRange === 0 ? max + fallbackRange / 2 : max;
+  const spread = paddedMax - paddedMin;
+  const tickFractions = buildTickFractions(points.length);
 
-  const path = points
-    .map((point, i) => {
-      const x =
-        padLeft +
-        (points.length > 1 ? (i / (points.length - 1)) * plotWidth : plotWidth / 2);
-      const y = padTop + (1 - (point - min) / spread) * plotHeight;
+  const path = points.map((point, i) => {
+      const x = padLeft + (points.length > 1 ? (i / (points.length - 1)) * plotWidth : plotWidth / 2);
+      const y = padTop + (1 - (point - paddedMin) / spread) * plotHeight;
       return `${i === 0 ? "M" : "L"} ${x} ${y}`;
     })
     .join(" ");
-
-  const yTicks = [
-    { value: max, y: padTop },
-    { value: mid, y: padTop + plotHeight / 2 },
-    { value: min, y: padTop + plotHeight },
-  ];
+  
+  const yTicks = tickFractions.map((fraction, index) => {
+    const value = paddedMax - fraction * spread;
+    const y = padTop + fraction * plotHeight;
+    return { index, value, y };
+  });
 
   const hasDateLabels = Array.isArray(xLabels) && xLabels.length === points.length;
-  const midpointIndex = Math.floor((points.length - 1) / 2);
-  const xTicks = [
-    {
-      label: hasDateLabels ? formatXAxisDateLabel(xLabels[0]) : "T1",
-      x: padLeft,
-    },
-    {
-      label: hasDateLabels
-        ? formatXAxisDateLabel(xLabels[midpointIndex])
-        : `T${Math.ceil(points.length / 2)}`,
-      x: padLeft + plotWidth / 2,
-    },
-    {
-      label: hasDateLabels ? formatXAxisDateLabel(xLabels[points.length - 1]) : `T${points.length}`,
-      x: padLeft + plotWidth,
-    },
-  ];
+  const xAxisGranularity = hasDateLabels ? chooseXAxisGranularity(xLabels) : "month";
+  const xTicks = tickFractions.map((fraction, index) => {
+    const x = padLeft + fraction * plotWidth;
+    const labelIndex = points.length > 1 ? Math.round(fraction * (points.length - 1)) : 0;
+    return {
+      index,
+      label: hasDateLabels ? formatXAxisDateLabel(xLabels[labelIndex], xAxisGranularity) : `T${labelIndex + 1}`,
+      x,
+    };
+  });
 
-  const formatAxisValue = (value: number) =>
-    Intl.NumberFormat("en-US", {
-      notation: "compact",
-      maximumFractionDigits: 1,
-    }).format(value);
+  const axisFractionDigits =
+    spread < 0.01 ? 6 : spread < 0.1 ? 5 : spread < 1 ? 4 : spread < 10 ? 3 : spread < 1000 ? 2 : 0;
+
+  const axisFormatter = new Intl.NumberFormat("en-US", {
+    notation: "standard",
+    minimumFractionDigits: axisFractionDigits,
+    maximumFractionDigits: axisFractionDigits,
+  });
+
+  const formatAxisValue = (value: number) => axisFormatter.format(value);
 
   return (
     <svg
@@ -323,7 +307,7 @@ function Sparkline({
     >
       {yTicks.map((tick) => (
         <line
-          key={`grid-${tick.value}-${tick.y}`}
+          key={`grid-${tick.index}`}
           className={styles.sparklineGrid}
           x1={padLeft}
           y1={tick.y}
@@ -349,7 +333,7 @@ function Sparkline({
       <path className={styles.sparklinePath} d={path} />
 
       {yTicks.map((tick) => (
-        <g key={`ytick-${tick.value}-${tick.y}`}>
+        <g key={`ytick-${tick.index}`}>
           <line
             className={styles.sparklineTick}
             x1={padLeft - 3}
@@ -364,7 +348,7 @@ function Sparkline({
       ))}
 
       {xTicks.map((tick) => (
-        <g key={`xtick-${tick.label}-${tick.x}`}>
+        <g key={`xtick-${tick.index}`}>
           <line
             className={styles.sparklineTick}
             x1={tick.x}
@@ -389,28 +373,35 @@ function Sparkline({
 
 function heatToneStyle(score: number): CSSProperties {
   /**
-   * Continuous red -> yellow -> green scale.
-   * Uses the same intermediate interpolation approach as before.
+   * Fixed 10-step heat scale:
+   * low values -> green, mid values -> yellow/orange, high values -> red.
    */
-  const clamped = Math.max(0, Math.min(100, score));
-  const hue = (clamped / 100) * 120; // 0=red, 60=yellow, 120=green
-  const fill = `hsl(${hue}, 100%, 30%)`;
-  const border = `hsl(${hue}, 100%, 30%)`;
+  const clamped = Math.max(0, Math.min(score, 99));
+  const palette = [
+    "#1a9850",
+    "#4db15e",
+    "#7acb68",
+    "#a5da70",
+    "#d0e878",
+    "#f4f491",
+    "#f7d26a",
+    "#f9b05a",
+    "#ef7e4a",
+    "#d73027",
+  ];
+  const bucketIndex = Math.floor(clamped / palette.length);
+  const fill = palette[bucketIndex];
+  const textColor = bucketIndex <= 1 || bucketIndex >= 8 ? "#f5f5f5" : "#111111";
 
   return {
     backgroundColor: fill,
-    borderColor: border,
+    borderColor: fill,
+    color: textColor,
   };
 }
 
 function alertToneClass(status: AlertRule["status"]) {
   return status === "Breached" ? styles.alertBreached : styles.alertWatching;
-}
-
-function impactToneClass(impact: TimelineEvent["impact"]) {
-  if (impact === "High") return styles.impactHigh;
-  if (impact === "Medium") return styles.impactMedium;
-  return styles.impactLow;
 }
 
 function toLabel(value: string) {
@@ -490,13 +481,11 @@ function normalizeSeries(observations: Array<{ date: string; value: number }>) {
   };
 }
 
-function toRecentMonthOptions(count = 12) {
-  return Array.from({ length: count }, (_, index) => {
-    const date = new Date();
-    date.setMonth(date.getMonth() - index);
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    return `${date.getFullYear()}-${month}`;
-  });
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function extractAlphaClose(row: Record<string, string>) {
@@ -560,35 +549,89 @@ function extractAlphaMetaSymbol(raw: Record<string, unknown>) {
 }
 
 export default function Home() {
-  const recentMonthOptions = toRecentMonthOptions(18);
   const [marketSymbolInput, setMarketSymbolInput] = useState("");
   const [marketSymbolMatches, setMarketSymbolMatches] = useState<SymbolSearchMatch[]>([]);
   const [showMarketMatches, setShowMarketMatches] = useState(false);
-  const [marketFunction, setMarketFunction] = useState<MarketFunction>("TIME_SERIES_INTRADAY");
-  const [marketInterval, setMarketInterval] = useState<"1min" | "5min" | "15min" | "30min" | "60min">("5min");
-  const [marketAdjusted, setMarketAdjusted] = useState<"default" | "true" | "false">("default");
-  const [marketExtendedHours, setMarketExtendedHours] = useState<"default" | "true" | "false">("default");
-  const [marketMonth, setMarketMonth] = useState("");
-  const [marketEntitlement, setMarketEntitlement] = useState<"default" | "realtime" | "delayed">("default");
+  const [marketFunction, setMarketFunction] = useState<MarketFunction>("TIME_SERIES_DAILY");
+  const [marketEntitlement, setMarketEntitlement] = useState<"realtime" | "delayed">("realtime");
+  const [marketStartDate, setMarketStartDate] = useState("");
+  const [marketEndDate, setMarketEndDate] = useState("");
   const [marketCards, setMarketCards] = useState<MarketSeriesCard[]>([]);
   const [marketLoading, setMarketLoading] = useState(false);
   const [marketError, setMarketError] = useState<string | null>(null);
   const [marketSymbolLoading, setMarketSymbolLoading] = useState(false);
   const [selectedCountry, setSelectedCountry] = useState("USA");
-  const [categories, setCategories] = useState<FredCategoryOption[]>([]);
+  const [categories, setCategories] = useState<MacroCategoryOption[]>([]);
   const [selectedCategory, setSelectedCategory] = useState("");
-  const [indicators, setIndicators] = useState<FredIndicatorOption[]>([]);
+  const [indicators, setIndicators] = useState<MacroIndicatorOption[]>([]);
   const [selectedIndicator, setSelectedIndicator] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [macroCards, setMacroCards] = useState<MacroSeriesCard[]>([]);
   const [macroLoading, setMacroLoading] = useState(false);
   const [macroError, setMacroError] = useState<string | null>(null);
+  const [cardsHydrated, setCardsHydrated] = useState(false);
+
+  const [heatCells, setHeatCells] = useState<HeatCell[]>([]);
+  const [heatLoading, setHeatLoading] = useState(false);
+  const [heatError, setHeatError] = useState<string | null>(null);
   const [newsArticles, setNewsArticles] = useState<NewsArticle[]>([]);
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsError, setNewsError] = useState<string | null>(null);
   const [activeNewsIndex, setActiveNewsIndex] = useState(0);
   const newsViewportRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    try {
+      const marketCached = window.localStorage.getItem(MARKET_CARDS_CACHE_KEY);
+      if (marketCached) {
+        const parsed = JSON.parse(marketCached) as unknown;
+        if (Array.isArray(parsed)) {
+          setMarketCards(parsed as MarketSeriesCard[]);
+        }
+      }
+
+      const macroCached = window.localStorage.getItem(MACRO_CARDS_CACHE_KEY);
+      if (macroCached) {
+        const parsed = JSON.parse(macroCached) as unknown;
+        if (Array.isArray(parsed)) {
+          setMacroCards(parsed as MacroSeriesCard[]);
+        }
+      }
+    } catch {
+      // Ignore cache read errors and keep in-memory defaults.
+    } finally {
+      setCardsHydrated(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!cardsHydrated) return;
+    try {
+      window.localStorage.setItem(MARKET_CARDS_CACHE_KEY, JSON.stringify(marketCards));
+    } catch {
+      // Ignore cache write errors.
+    }
+  }, [cardsHydrated, marketCards]);
+
+  useEffect(() => {
+    if (!cardsHydrated) return;
+    try {
+      window.localStorage.setItem(MACRO_CARDS_CACHE_KEY, JSON.stringify(macroCards));
+    } catch {
+      // Ignore cache write errors.
+    }
+  }, [cardsHydrated, macroCards]);
+
+  useEffect(() => {
+    const today = new Date();
+    const oneYearAgo = new Date(today);
+    oneYearAgo.setFullYear(today.getFullYear() - 1);
+    setMarketStartDate((current) => current || toDateInputValue(oneYearAgo));
+    setMarketEndDate((current) => current || toDateInputValue(today));
+    setStartDate((current) => current || `${today.getFullYear()}-01-01`);
+    setEndDate((current) => current || toDateInputValue(today));
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -687,7 +730,7 @@ export default function Home() {
       window.clearTimeout(timeoutId);
     };
   }, [marketSymbolInput]);
-
+  
   // Country selection drop down menu
   useEffect(() => {
     const controller = new AbortController();
@@ -706,7 +749,7 @@ export default function Home() {
           throw new Error("Failed to load categories.");
         }
 
-        const data = (await response.json()) as FredCategoriesResponse;
+        const data = (await response.json()) as MacroCategoriesResponse;
         const nextCategories = data.categories ?? [];
         setCategories(nextCategories);
         setSelectedCategory((current) => {
@@ -719,7 +762,7 @@ export default function Home() {
         if (error instanceof DOMException && error.name === "AbortError") return;
         setCategories([]);
         setSelectedCategory("");
-        setMacroError("Unable to load FRED categories.");
+        setMacroError("Unable to load macro categories.");
       } finally {
         setMacroLoading(false);
       }
@@ -751,7 +794,7 @@ export default function Home() {
           throw new Error("Failed to load indicators.");
         }
 
-        const data = (await response.json()) as FredIndicatorsResponse;
+        const data = (await response.json()) as MacroIndicatorsResponse;
         setIndicators(data.indicators ?? []);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
@@ -766,11 +809,51 @@ export default function Home() {
     return () => controller.abort();
   }, [selectedCategory]);
 
+  
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadHottestThemes() {
+      setHeatLoading(true);
+      setHeatError(null);
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/themes/hottest?limit=9`, {
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error("Failed to load hottest themes.");
+        }
+
+        const data = (await response.json()) as Array<{ theme_id: string; topic: string; score: number }>;
+        const normalized = data.map((item) => ({
+          theme_id: item.theme_id,
+          topic: item.topic,
+          score: Math.max(0, Math.min(100, Number(item.score) || 0)),
+        }));
+
+        setHeatCells(normalized);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setHeatCells([]);
+        setHeatError("Unable to load theme heat data.");
+      } finally {
+        setHeatLoading(false);
+      }
+    }
+
+    void loadHottestThemes();
+    return () => controller.abort();
+  }, []);
+
   // Indicator selection drop down menu
   const handleIndicatorSelect = (event: ChangeEvent<HTMLSelectElement>) => {
     setSelectedIndicator(event.target.value);
   };
 
+  // Query backend on search
   const handleSearchClick = async () => {
     if (!selectedIndicator || !selectedCategory) return;
     if (startDate && endDate && startDate > endDate) {
@@ -797,7 +880,7 @@ export default function Home() {
         throw new Error("Failed to load series data.");
       }
 
-      const data = (await response.json()) as FredSeriesResponse;
+      const data = (await response.json()) as MacroSeriesResponse;
       const changePercent = data.change?.percent ?? 0;
       const normalizedSeries = normalizeSeries(data.observations ?? []);
       const nextCard: MacroSeriesCard = {
@@ -835,28 +918,30 @@ export default function Home() {
       setMarketError("Please select or enter a symbol.");
       return;
     }
+    if (marketStartDate && marketEndDate && marketStartDate > marketEndDate) {
+      setMarketError("Start Date cannot be after End Date.");
+      return;
+    }
 
     setMarketLoading(true);
     setMarketError(null);
+    let requestUrl = "";
 
     try {
       const endpoint = MARKET_ENDPOINTS[marketFunction];
       const query = new URLSearchParams({ symbol });
 
-      if (marketFunction === "TIME_SERIES_INTRADAY") {
-        query.set("interval", marketInterval);
-        if (marketAdjusted !== "default") query.set("adjusted", marketAdjusted);
-        if (marketExtendedHours !== "default") query.set("extended_hours", marketExtendedHours);
-        if (marketMonth) query.set("month", marketMonth);
-        if (marketEntitlement !== "default") query.set("entitlement", marketEntitlement);
-      } else if (
+      if (
         marketFunction === "TIME_SERIES_DAILY" ||
         marketFunction === "TIME_SERIES_DAILY_ADJUSTED"
       ) {
-        if (marketEntitlement !== "default") query.set("entitlement", marketEntitlement);
+        query.set("entitlement", marketEntitlement);
       }
+      if (marketStartDate) query.set("start_date", marketStartDate);
+      if (marketEndDate) query.set("end_date", marketEndDate);
 
-      const response = await fetch(`${API_BASE_URL}${endpoint}?${query.toString()}`);
+      requestUrl = `${API_BASE_URL}${endpoint}?${query.toString()}`;
+      const response = await fetch(requestUrl);
       if (!response.ok) {
         throw new Error("Failed to load market time series.");
       }
@@ -878,11 +963,9 @@ export default function Home() {
       const key = [
         resolvedSymbol,
         marketFunction,
-        marketInterval,
-        marketAdjusted,
-        marketExtendedHours,
-        marketMonth,
         marketEntitlement,
+        marketStartDate,
+        marketEndDate,
       ].join("|");
       const functionLabel =
         MARKET_FUNCTION_OPTIONS.find((option) => option.value === marketFunction)?.label ??
@@ -907,7 +990,10 @@ export default function Home() {
       });
       setShowMarketMatches(false);
     } catch (error) {
-      if (error instanceof Error) {
+      if (error instanceof TypeError) {
+        const target = requestUrl || `${API_BASE_URL}/api/market/...`;
+        setMarketError(`Network error reaching backend at ${target}. Check backend server and CORS.`);
+      } else if (error instanceof Error) {
         setMarketError(error.message || "Unable to load market time series.");
       } else {
         setMarketError("Unable to load market time series.");
@@ -928,11 +1014,19 @@ export default function Home() {
     }
   };
 
+  const handleRemoveMarketCard = (marketKey: string) => {
+    setMarketCards((previousCards) => previousCards.filter((card) => card.marketKey !== marketKey));
+  };
+
+  const handleRemoveMacroCard = (indicatorKey: string) => {
+    setMacroCards((previousCards) => previousCards.filter((card) => card.indicatorKey !== indicatorKey));
+  };
+
   return (
     <div className={styles.page}>
       <header className={styles.header}>
         <div className={styles.headerInner}>
-          <p className={styles.brand}>DAMMIT FINANCE MANAGER</p>
+          <p className={styles.brand}>DAMMIT MACROECONOMIC TRACKER</p>
         </div>
       </header>
 
@@ -941,9 +1035,9 @@ export default function Home() {
           <p className={styles.sidebarTitle}>Features</p>
           <ul className={styles.moduleList}>
             <li>
-              <a href="#today-market" className={`${styles.moduleItem} ${styles.moduleLink}`}>
+              <a href="#stock-market" className={`${styles.moduleItem} ${styles.moduleLink}`}>
                 <ChartCandlestick className={styles.moduleIcon} aria-hidden />
-                <span>Market</span>
+                <span>Stock Market</span>
               </a>
             </li>
             <li>
@@ -953,9 +1047,9 @@ export default function Home() {
               </a>
             </li>
             <li>
-              <a href="#timelines" className={`${styles.moduleItem} ${styles.moduleLink}`}>
+              <a href="#news-feed" className={`${styles.moduleItem} ${styles.moduleLink}`}>
                 <Newspaper className={styles.moduleIcon} aria-hidden />
-                <span>Timelines</span>
+                <span>News Feed</span>
               </a>
             </li>
             <li>
@@ -976,17 +1070,20 @@ export default function Home() {
                 <span>Alerts</span>
               </a>
             </li>
+            <li>
+              <a href="/timeline" className={`${styles.moduleItem} ${styles.moduleLink}`}>
+                <History className={styles.moduleIcon} aria-hidden />
+                <span>Timelines</span>
+              </a>
+            </li>
           </ul>
         </aside>
 
         <section className={styles.contentGrid}>
           <div className={styles.stack}>
-            <section id="today-market" className={styles.panel}>
+            <section id="stock-market" className={styles.panel}>
               <div className={styles.panelHead}>
-                <h2 className={styles.featureTitle}>Today&apos;s Market</h2>
-                <span className={styles.annotation}>
-                  Search symbols and time series from Alpha Vantage
-                </span>
+                <h2 className={styles.featureTitle}>Stock Market</h2>
               </div>
 
               <div className={styles.macroFilterRow}>
@@ -1040,86 +1137,43 @@ export default function Home() {
                 </label>
 
                 <label className={styles.macroFilterField}>
-                  <span className={styles.macroFilterLabel}>Interval</span>
-                  <select
-                    className={styles.macroSelect}
-                    value={marketInterval}
-                    onChange={(event) =>
-                      setMarketInterval(event.target.value as "1min" | "5min" | "15min" | "30min" | "60min")
-                    }
-                    disabled={marketFunction !== "TIME_SERIES_INTRADAY"}
-                  >
-                    <option value="1min">1min</option>
-                    <option value="5min">5min</option>
-                    <option value="15min">15min</option>
-                    <option value="30min">30min</option>
-                    <option value="60min">60min</option>
-                  </select>
-                </label>
-
-                <label className={styles.macroFilterField}>
-                  <span className={styles.macroFilterLabel}>Adjusted</span>
-                  <select
-                    className={styles.macroSelect}
-                    value={marketAdjusted}
-                    onChange={(event) => setMarketAdjusted(event.target.value as "default" | "true" | "false")}
-                    disabled={marketFunction !== "TIME_SERIES_INTRADAY"}
-                  >
-                    <option value="default">Default</option>
-                    <option value="true">True</option>
-                    <option value="false">False</option>
-                  </select>
-                </label>
-
-                <label className={styles.macroFilterField}>
-                  <span className={styles.macroFilterLabel}>Extended Hours</span>
-                  <select
-                    className={styles.macroSelect}
-                    value={marketExtendedHours}
-                    onChange={(event) => setMarketExtendedHours(event.target.value as "default" | "true" | "false")}
-                    disabled={marketFunction !== "TIME_SERIES_INTRADAY"}
-                  >
-                    <option value="default">Default</option>
-                    <option value="true">True</option>
-                    <option value="false">False</option>
-                  </select>
-                </label>
-
-                <label className={styles.macroFilterField}>
-                  <span className={styles.macroFilterLabel}>Month</span>
-                  <select
-                    className={styles.macroSelect}
-                    value={marketMonth}
-                    onChange={(event) => setMarketMonth(event.target.value)}
-                    disabled={marketFunction !== "TIME_SERIES_INTRADAY"}
-                  >
-                    <option value="">Latest month</option>
-                    {recentMonthOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-
-                <label className={styles.macroFilterField}>
                   <span className={styles.macroFilterLabel}>Entitlement</span>
                   <select
                     className={styles.macroSelect}
                     value={marketEntitlement}
                     onChange={(event) =>
-                      setMarketEntitlement(event.target.value as "default" | "realtime" | "delayed")
+                      setMarketEntitlement(event.target.value as "realtime" | "delayed")
                     }
                     disabled={
-                      marketFunction !== "TIME_SERIES_INTRADAY" &&
                       marketFunction !== "TIME_SERIES_DAILY" &&
                       marketFunction !== "TIME_SERIES_DAILY_ADJUSTED"
                     }
                   >
-                    <option value="default">Default</option>
                     <option value="realtime">Realtime</option>
                     <option value="delayed">Delayed</option>
                   </select>
+                </label>
+
+                <label className={styles.macroFilterField}>
+                  <span className={styles.macroFilterLabel}>Start Date</span>
+                  <input
+                    type="date"
+                    className={styles.macroDateInput}
+                    value={marketStartDate}
+                    onChange={(event) => setMarketStartDate(event.target.value)}
+                    max={marketEndDate || undefined}
+                  />
+                </label>
+
+                <label className={styles.macroFilterField}>
+                  <span className={styles.macroFilterLabel}>End Date</span>
+                  <input
+                    type="date"
+                    className={styles.macroDateInput}
+                    value={marketEndDate}
+                    onChange={(event) => setMarketEndDate(event.target.value)}
+                    min={marketStartDate || undefined}
+                  />
                 </label>
               </div>
 
@@ -1145,12 +1199,20 @@ export default function Home() {
 
               {marketCards.length === 0 ? (
                 <p className={styles.macroEmpty}>
-                  Search to generate market graphs.
+                  Search to generate graphs. (Currently limited to 25 requests per day)
                 </p>
               ) : (
                 <div className={styles.seriesGrid}>
                   {marketCards.map((card) => (
                     <article key={card.marketKey} className={styles.seriesCard}>
+                      <button
+                        type="button"
+                        className={styles.seriesCloseButton}
+                        onClick={() => handleRemoveMarketCard(card.marketKey)}
+                        aria-label={`Close ${card.name} graph`}
+                      >
+                        <SquareX size={14} aria-hidden />
+                      </button>
                       <div className={styles.seriesTop}>
                         <div>
                           <p className={styles.seriesName}>{card.name}</p>
@@ -1175,7 +1237,7 @@ export default function Home() {
 
             <section id="macro-indicators" className={styles.panel}>
               <div className={styles.panelHead}>
-                <h2 className={styles.featureTitle}>Today&apos;s Macroeconomic Indicators</h2>
+                <h2 className={styles.featureTitle}>Macroeconomic Indicators</h2>
                 <span className={styles.annotation}>
                   TODO: Add global/country expansion (currently USA only)
                 </span>
@@ -1286,6 +1348,14 @@ export default function Home() {
                 <div className={styles.seriesGrid}>
                   {macroCards.map((card) => (
                     <article key={card.indicatorKey} className={styles.seriesCard}>
+                      <button
+                        type="button"
+                        className={styles.seriesCloseButton}
+                        onClick={() => handleRemoveMacroCard(card.indicatorKey)}
+                        aria-label={`Close ${card.name} graph`}
+                      >
+                        <SquareX size={14} aria-hidden />
+                      </button>
                       <div className={styles.seriesTop}>
                         <div>
                           <p className={styles.seriesName}>{card.name}</p>
@@ -1307,53 +1377,13 @@ export default function Home() {
                 </div>
               )}
             </section>
-
-            <section id="timelines" className={styles.panel}>
-              <div className={styles.panelHead}>
-                <h2 className={styles.featureTitle}>
-                  Timelines
-                </h2>
-                <span className={styles.annotation}>
-                  TODO: Implement timeline frontend/backend logic (High, medium, low = importance score)
-                </span>
-              </div>
-
-              <div className={styles.queryRow}>
-                <input
-                  readOnly
-                  value="inflation"
-                  aria-label="Timeline topic query"
-                  className={styles.queryInput}
-                />
-                <button type="button" className={styles.queryButton}>
-                  Query Timeline
-                </button>
-              </div>
-
-              <div className={styles.timelineList}>
-                {timelineEvents.map((event) => (
-                  <article key={`${event.date}-${event.title}`} className={styles.timelineEvent}>
-                    <span className={styles.timelineDot} />
-                    <div className={styles.timelineMeta}>
-                      <p className={styles.timelineDate}>{event.date}</p>
-                      <span className={`${styles.impactTag} ${impactToneClass(event.impact)}`}>
-                        {event.impact}
-                      </span>
-                    </div>
-                    <p className={styles.timelineTitle}>{event.title}</p>
-                    <p className={styles.timelineText}>{event.text}</p>
-                    <p className={styles.timelineSource}>Source: {event.source}</p>
-                  </article>
-                ))}
-              </div>
-            </section>
           </div>
 
           <div className={styles.stack}>
             <section id="news-feed" className={styles.panel}>
               <div className={styles.panelHead}>
                 <h2 className={styles.featureTitle}>
-                  News
+                  News Feed
                 </h2>
               </div>
 
@@ -1392,18 +1422,26 @@ export default function Home() {
                 </span>
               </div>
 
-              <div className={styles.heatGrid}>
-                {heatCells.map((cell) => (
-                  <div
-                    key={cell.topic}
-                    className={styles.heatCell}
-                    style={heatToneStyle(cell.score)}
-                  >
-                    <p className={styles.heatTopic}>{cell.topic}</p>
-                    <p className={styles.heatScore}>{cell.score}</p>
-                  </div>
-                ))}
-              </div>
+              {heatLoading ? <p className={styles.macroStatus}>Loading theme heat...</p> : null}
+              {heatError ? <p className={styles.macroError}>{heatError}</p> : null}
+
+              {heatCells.length === 0 ? (
+                <p className={styles.macroEmpty}>No theme heat data yet.</p>
+              ) : (
+                <div className={styles.heatGrid}>
+                  {heatCells.map((cell) => (
+                    <Link
+                      key={cell.theme_id || cell.topic}
+                      href={cell.theme_id ? `/timeline/${cell.theme_id}` : "#"}
+                      className={styles.heatCell}
+                      style={heatToneStyle(cell.score)}
+                    >
+                      <p className={styles.heatTopic}>{cell.topic}</p>
+                      <p className={styles.heatScore}>{cell.score}</p>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </section>
 
             <section id="ai-assistant" className={styles.panel}>
@@ -1484,3 +1522,6 @@ export default function Home() {
     </div>
   );
 }
+
+
+
