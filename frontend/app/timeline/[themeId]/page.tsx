@@ -116,7 +116,7 @@ export default function TimelinePage() {
         const res = await fetch(`${API_BASE_URL}/api/themes`, {
           signal: controller.signal,
         });
-        if (!res.ok) throw new Error("Failed to load themes.");
+        if (!res.ok) throw new Error("Hit request limit.");
         const data = (await res.json()) as ThemeOption[];
         setThemeOptions(data);
         setThemesLoadedOnce(true);
