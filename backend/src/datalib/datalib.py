@@ -320,12 +320,6 @@ def test_fred() -> None:
 
 ############################# Webcrawler #############################
 
-from scrapy.crawler import CrawlerProcess
-from scrapy.settings import SETTINGS_PRIORITIES
-from scrapy.utils.project import get_project_settings
-from webcrawlerlib.spiders.gdelt_spider import GdeltSpider
-
-
 # Main gdelt webcrawler API endpoint
 def run_gdelt_spider(
         query_terms: str | List[str], 
@@ -344,6 +338,16 @@ def run_gdelt_spider(
         output: Output scraped data to gdelt_spider_output.json in current directory.
         language: Source language filter for GDELT (default: "english").
     """
+    try:
+        from scrapy.crawler import CrawlerProcess
+        from scrapy.settings import SETTINGS_PRIORITIES
+        from scrapy.utils.project import get_project_settings
+        from webcrawlerlib.spiders.gdelt_spider import GdeltSpider
+    except ImportError as exc:
+        raise RuntimeError(
+            "Scrapy dependencies are not installed. Install crawler extras to run run_gdelt_spider()."
+        ) from exc
+
     if isinstance(query_terms, list):
         quoted = []
         for term in query_terms:
