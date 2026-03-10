@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Dammit Macroeconomic Tracker"
+  title: "DamnMacro"
 };
 
 export default function RootLayout({

@@ -1026,7 +1026,7 @@ export default function Home() {
     <div className={styles.page}>
       <header className={styles.header}>
         <div className={styles.headerInner}>
-          <p className={styles.brand}>DAMMIT MACROECONOMIC TRACKER</p>
+          <p className={styles.brand}>DamnMacro</p>
         </div>
       </header>
 
