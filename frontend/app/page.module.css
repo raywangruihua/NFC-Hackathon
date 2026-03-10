@@ -40,6 +40,18 @@
   color: var(--accent);
 }
 
+.brandRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.brandLogo {
+  width: 2.625rem;
+  height: auto;
+  object-fit: contain;
+}
+
 .subtitle {
   margin: 0;
   font-size: 0.75rem;

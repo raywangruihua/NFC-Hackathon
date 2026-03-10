@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type ChangeEvent } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   Bell,
   Bot,
@@ -1026,7 +1027,17 @@ export default function Home() {
     <div className={styles.page}>
       <header className={styles.header}>
         <div className={styles.headerInner}>
-          <p className={styles.brand}>DamnMacro</p>
+          <div className={styles.brandRow}>
+            <p className={styles.brand}>DamnMacro</p>
+            <Image
+              src="/logo-white.png"
+              alt="DamnMacro logo"
+              width={42}
+              height={24}
+              className={styles.brandLogo}
+              priority
+            />
+          </div>
         </div>
       </header>
 
